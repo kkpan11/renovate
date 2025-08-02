@@ -508,6 +508,14 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^kustomize/v(?<version>\\S+)',
     },
   },
+  localstack: {
+    asdfPluginUrl: 'https://github.com/Azulinho/asdf-localstack',
+    config: {
+      datasource: GithubTagsDatasource.id,
+      packageName: 'localstack/localstack',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
   lua: {
     asdfPluginUrl: 'https://github.com/Stratus3D/asdf-lua',
     config: {
@@ -545,6 +553,14 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'kubernetes/minikube',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  mockery: {
+    asdfPluginUrl: 'https://github.com/cabify/asdf-mockery.git',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'vektra/mockery',
       extractVersion: '^v(?<version>\\S+)',
     },
   },
