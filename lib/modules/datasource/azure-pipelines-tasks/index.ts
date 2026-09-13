@@ -1,16 +1,16 @@
-import type { TypeOf, ZodType } from 'zod';
-import { GlobalConfig } from '../../../config/global';
-import { cache } from '../../../util/cache/package/decorator';
-import * as hostRules from '../../../util/host-rules';
-import type { HttpOptions } from '../../../util/http/types';
-import { id as versioning } from '../../versioning/loose';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
+import type { TypeOf, ZodType } from 'zod/v4';
+import { GlobalConfig } from '../../../config/global.ts';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import * as hostRules from '../../../util/host-rules.ts';
+import type { HttpOptions } from '../../../util/http/types.ts';
+import { id as versioning } from '../../versioning/loose/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, Release, ReleaseResult } from '../types.ts';
 import {
   AzurePipelinesFallbackTasks,
   AzurePipelinesJSON,
   AzurePipelinesTaskVersion,
-} from './schema';
+} from './schema.ts';
 
 const TASKS_URL_BASE =
   'https://raw.githubusercontent.com/renovatebot/azure-devops-marketplace/main';
@@ -67,54 +67,63 @@ export class AzurePipelinesTasksDatasource extends Datasource {
         })
         .sort(AzurePipelinesTasksDatasource.compareSemanticVersions('version'))
         .forEach((task) => {
-          result.releases.push({
+          const release: Release = {
             version: `${task.version!.major}.${task.version!.minor}.${task.version!.patch}`,
+            changelogContent: task.releaseNotes,
             isDeprecated: task.deprecated,
-            changelogUrl: task.serverOwned
-              ? BUILT_IN_TASKS_CHANGELOG_URL
-              : undefined,
-          });
+          };
+
+          if (task.serverOwned) {
+            release.changelogUrl = BUILT_IN_TASKS_CHANGELOG_URL;
+          }
+
+          result.releases.push(release);
         });
 
       return result;
-    } else {
-      const versions =
-        (
-          await this.getTasks(
-            BUILT_IN_TASKS_URL,
-            {},
-            AzurePipelinesFallbackTasks,
-          )
-        )[packageName.toLowerCase()] ??
-        (
-          await this.getTasks(
-            MARKETPLACE_TASKS_URL,
-            {},
-            AzurePipelinesFallbackTasks,
-          )
-        )[packageName.toLowerCase()];
+    }
+    const versions =
+      (
+        await this.getTasks(BUILT_IN_TASKS_URL, {}, AzurePipelinesFallbackTasks)
+      )[packageName.toLowerCase()] ??
+      (
+        await this.getTasks(
+          MARKETPLACE_TASKS_URL,
+          {},
+          AzurePipelinesFallbackTasks,
+        )
+      )[packageName.toLowerCase()];
 
-      if (versions) {
-        const releases = versions.map((version) => ({ version }));
-        return { releases };
-      }
+    if (versions) {
+      const releases = versions.map((version) => ({ version }));
+      return { releases };
     }
 
     return null;
   }
 
-  @cache({
-    namespace: `datasource-${AzurePipelinesTasksDatasource.id}`,
-    key: (url: string) => url,
-    ttlMinutes: 24 * 60,
-  })
-  async getTasks<Schema extends ZodType>(
+  private async _getTasks<Schema extends ZodType>(
     url: string,
     opts: HttpOptions,
     schema: Schema,
   ): Promise<TypeOf<Schema>> {
     const { body } = await this.http.getJson(url, opts, schema);
     return body;
+  }
+
+  getTasks<Schema extends ZodType>(
+    url: string,
+    opts: HttpOptions,
+    schema: Schema,
+  ): Promise<TypeOf<Schema>> {
+    return withCache(
+      {
+        namespace: `datasource-${AzurePipelinesTasksDatasource.id}`,
+        key: url,
+        ttlMinutes: 24 * 60,
+      },
+      () => this._getTasks(url, opts, schema),
+    );
   }
 
   static compareSemanticVersions = (key: string) => (a: any, b: any) => {

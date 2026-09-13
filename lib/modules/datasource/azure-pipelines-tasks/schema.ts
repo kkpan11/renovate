@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 export const AzurePipelinesTaskVersion = z.object({
   major: z.number(),
@@ -10,6 +10,7 @@ export const AzurePipelinesTask = z.object({
   id: z.string(),
   name: z.string(),
   deprecated: z.boolean().optional(),
+  releaseNotes: z.string().optional(),
   serverOwned: z.boolean().optional(),
   version: AzurePipelinesTaskVersion.nullable(),
   contributionIdentifier: z.string().optional(),
@@ -19,4 +20,7 @@ export const AzurePipelinesJSON = z.object({
   value: AzurePipelinesTask.array(),
 });
 
-export const AzurePipelinesFallbackTasks = z.record(z.string().array());
+export const AzurePipelinesFallbackTasks = z.record(
+  z.string(),
+  z.string().array(),
+);

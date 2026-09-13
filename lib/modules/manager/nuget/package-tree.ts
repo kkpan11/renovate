@@ -1,39 +1,54 @@
-import is from '@sindresorhus/is';
+import { isNonEmptyString } from '@sindresorhus/is';
 import { Graph, hasCycle } from 'graph-data-structure';
 import upath from 'upath';
-import { logger } from '../../../logger';
-import { minimatchFilter } from '../../../util/minimatch';
-import { scm } from '../../platform/scm';
-import type { ProjectFile } from './types';
-import { readFileAsXmlDocument } from './util';
+import { logger } from '../../../logger/index.ts';
+import {
+  getMatchingFiles,
+  resolveRelativePathToRoot,
+} from '../../../util/fs/util.ts';
+import { scm } from '../../platform/scm.ts';
+import type { ProjectFile } from './types.ts';
+import { readFileAsXmlDocument } from './util.ts';
 
+export const GLOBAL_JSON = 'global.json';
 export const NUGET_CENTRAL_FILE = 'Directory.Packages.props';
 export const MSBUILD_CENTRAL_FILE = 'Packages.props';
+export const DIRECTORY_BUILD_PROPS = 'Directory.Build.props';
 
 /**
  * Get all leaf package files of ancestry that depend on packageFileName.
  */
 export async function getDependentPackageFiles(
   packageFileName: string,
-  isCentralManagement = false,
+  isPropsFile = false,
+  isGlobalJson = false,
 ): Promise<ProjectFile[]> {
   const packageFiles = await getAllPackageFiles();
   const graph = new Graph();
 
-  if (isCentralManagement) {
+  if (isPropsFile) {
     graph.addNode(packageFileName);
+  }
+
+  if (isGlobalJson) {
+    graph.addNode(GLOBAL_JSON);
   }
 
   const parentDir =
     packageFileName === NUGET_CENTRAL_FILE ||
-    packageFileName === MSBUILD_CENTRAL_FILE
+    packageFileName === MSBUILD_CENTRAL_FILE ||
+    packageFileName === GLOBAL_JSON ||
+    packageFileName === DIRECTORY_BUILD_PROPS
       ? ''
       : upath.dirname(packageFileName);
 
   for (const f of packageFiles) {
     graph.addNode(f);
 
-    if (isCentralManagement && upath.dirname(f).startsWith(parentDir)) {
+    if (
+      (isPropsFile || isGlobalJson) &&
+      upath.dirname(f).startsWith(parentDir)
+    ) {
       graph.addEdge(packageFileName, f);
     }
   }
@@ -49,13 +64,13 @@ export async function getDependentPackageFiles(
       .map((ig) => ig.childrenNamed('ProjectReference'))
       .flat()
       .map((pf) => pf.attr.Include)
-      .filter(is.nonEmptyString);
+      .filter(isNonEmptyString);
 
     const projectReferences = projectReferenceAttributes.map((a) =>
       upath.normalize(a),
     );
     const normalizedRelativeProjectReferences = projectReferences.map((r) =>
-      reframeRelativePathToRootOfRepo(f, r),
+      resolveRelativePathToRoot(f, r),
     );
 
     for (const ref of normalizedRelativeProjectReferences) {
@@ -70,7 +85,7 @@ export async function getDependentPackageFiles(
   const deps = new Map<string, boolean>();
   recursivelyGetDependentPackageFiles(packageFileName, graph, deps);
 
-  if (isCentralManagement) {
+  if (isPropsFile || isGlobalJson) {
     // remove props file, as we don't need it
     deps.delete(packageFileName);
   }
@@ -107,36 +122,13 @@ function recursivelyGetDependentPackageFiles(
 }
 
 /**
- * Take the path relative from a project file, and make it relative from the root of the repo
- */
-function reframeRelativePathToRootOfRepo(
-  dependentProjectRelativePath: string,
-  projectReference: string,
-): string {
-  const virtualRepoRoot = '/';
-  const absoluteDependentProjectPath = upath.resolve(
-    virtualRepoRoot,
-    dependentProjectRelativePath,
-  );
-  const absoluteProjectReferencePath = upath.resolve(
-    upath.dirname(absoluteDependentProjectPath),
-    projectReference,
-  );
-  const relativeProjectReferencePath = upath.relative(
-    virtualRepoRoot,
-    absoluteProjectReferencePath,
-  );
-
-  return relativeProjectReferencePath;
-}
-
-/**
  * Get a list of package files in localDir
  */
 async function getAllPackageFiles(): Promise<string[]> {
   const allFiles = await scm.getFileList();
-  const filteredPackageFiles = allFiles.filter(
-    minimatchFilter('*.{cs,vb,fs}proj', { matchBase: true, nocase: true }),
+  const filteredPackageFiles = getMatchingFiles(
+    '**/*.{cs,vb,fs}proj',
+    allFiles,
   );
 
   logger.trace({ filteredPackageFiles }, 'Found package files');

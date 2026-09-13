@@ -7,7 +7,7 @@ The following environment variables are "experimental" because they:
 - can be removed at any time
 - are variables for Renovate's internal use to validate they work as intended
 
-Experimental variables which are commonly used and for which there is no external solution in sight can be converted to an official configuration option by the Renovate bot developers.
+Experimental variables which are commonly used and for which there is no external solution in sight can be converted to an official configuration option by the Renovate developers.
 
 Use these experimental variables at your own risk.
 We do not follow Semantic Versioning for any experimental variables.
@@ -22,13 +22,6 @@ For more information see [the OpenTelemetry docs](opentelemetry.md).
 ## `RENOVATE_PAGINATE_ALL`
 
 If set to any value, Renovate will always paginate requests to GitHub fully, instead of stopping after 10 pages.
-
-## `RENOVATE_STATIC_REPO_CONFIG`
-
-If set to a _valid_ `JSON` string containing a _valid_ Renovate configuration, it will be applied to the repository config before resolving the actual configuration file within the repository.
-
-> [!warning]
-> An invalid value will result in the scan being aborted.
 
 ## `RENOVATE_X_DOCKER_HUB_DISABLE_LABEL_LOOKUP`
 
@@ -46,6 +39,16 @@ This includes the following:
 
 If set to any value, Renovate will stop using the Docker Hub API (`https://hub.docker.com`) to fetch tags and instead use the normal Docker API for images pulled from `https://index.docker.io`.
 
+## `RENOVATE_X_DOCKER_PAGINATION_ALLOW_CROSS_ORIGIN`
+
+!!! warning
+  This is an explicit opt-out of a security control.
+
+If set to any value, the `docker` datasource will follow paginated `next` links pointing to a different origin than the registry it is querying.
+
+By default Renovate drops such cross-origin pagination links, so a malicious or compromised registry cannot redirect an authenticated request to an attacker-controlled host and exfiltrate credentials.
+Set this only if you trust the registry and it legitimately paginates across hosts (for example, an absolute `next` link pointing at a CDN or backend host).
+
 ## `RENOVATE_X_ENCRYPTED_STRICT`
 
 If set to `"true"`, a config error Issue will be raised in case repository config contains `encrypted` objects without any `privateKey` defined.
@@ -53,6 +56,11 @@ If set to `"true"`, a config error Issue will be raised in case repository confi
 ## `RENOVATE_X_EXEC_GPID_HANDLE`
 
 If set, Renovate will terminate the whole process group of a terminated child process spawned by Renovate.
+
+## `RENOVATE_X_GITLAB_AUTO_APPROVE_TOKEN`
+
+If set, when `autoApprove` is enabled, the provided token is used to authenticate GitLab approve requests instead of the default one.
+This is useful in environments where a user cannot approve its own PRs.
 
 ## `RENOVATE_X_GITLAB_AUTO_MERGEABLE_CHECK_ATTEMPS`
 
@@ -84,6 +92,11 @@ If set, Renovate will use this as a delay to proceed with an automerge.
 
 Default value: `250` (milliseconds).
 
+## `RENOVATE_X_GITLAB_SKIP_STATUS_WITHOUT_PIPELINE`
+
+If set to `true` value, Renovate will skip setting a branch status check on GitLab when no pipeline is found for the commit.
+This is useful for GitLab configurations where pipelines are only created for merge requests, not for branches.
+
 ## `RENOVATE_X_HARD_EXIT`
 
 If set to any value, Renovate will use a "hard" `process.exit()` once all work is done, even if a sub-process is otherwise delaying Node.js from exiting.
@@ -97,9 +110,30 @@ Skip initializing `RE2` for regular expressions and instead use Node-native `Reg
 
 If set to any value, Renovate will download `nupkg` files for determining package metadata.
 
+## `RENOVATE_X_NUGET_PAGINATION_ALLOW_CROSS_ORIGIN`
+
+!!! warning
+  This is an explicit opt-out of a security control.
+
+If set to any value, the `nuget` datasource will follow paginated `next` links pointing to a different origin than the feed it is querying.
+
+By default Renovate drops such cross-origin pagination links, so a malicious or compromised feed cannot redirect an authenticated request to an attacker-controlled host and exfiltrate credentials.
+Set this only if you trust the feed and it legitimately paginates across hosts (for example, an absolute `next` link pointing at a backend host).
+
+## `RENOVATE_X_PGP_RUNTIME`
+
+Specify which PGP runtime to use for decrypting Renovate config.
+Allowed values are `js-java`, `wasm-java` and `wasm-dotnet`.
+
+!!! note
+  `js-java` and `wasm-dotnet` are not recommended due to performance reasons.
+  Incompatible with `RENOVATE_X_USE_OPENPGP`.
+
+Default: `wasm-java`.
+
 ## `RENOVATE_X_PLATFORM_VERSION`
 
-Specify this string for Renovate to skip API checks and provide GitLab/Gitea and Forgejo/Bitbucket server version directly.
+Specify this string for Renovate to skip API checks and provide Bitbucket server, Forgejo or GitLab version directly.
 Particularly useful with GitLab's `CI_JOB_TOKEN` to authenticate Renovate or to reduce API calls for Bitbucket.
 
 Read [platform details](modules/platform/gitlab/index.md) to learn why we need the server version on GitLab.
@@ -108,18 +142,29 @@ Read [platform details](modules/platform/gitlab/index.md) to learn why we need t
 
 If set, Renovate will rewrite GitHub Enterprise Server's pagination responses to use the `endpoint` URL from the Renovate config.
 
-<!-- prettier-ignore -->
 !!! note
-    For the GitHub Enterprise Server platform only.
+  For the GitHub Enterprise Server platform only.
 
-## `RENOVATE_X_REPO_CACHE_FORCE_LOCAL`
+## `RENOVATE_X_SQLITE_BUSY_TIMEOUT`
 
-If set, Renovate will persist repository cache locally after uploading to S3.
+Set the SQLite busy timeout in milliseconds. Defaults to `5000`.
+
+Only applies when `RENOVATE_X_SQLITE_PACKAGE_CACHE` is set.
 
 ## `RENOVATE_X_SQLITE_PACKAGE_CACHE`
 
 If set, Renovate will use SQLite as the backend for the package cache.
 Don't combine with `redisUrl`, Redis would be preferred over SQlite.
+
+## `RENOVATE_X_STATIC_REPO_CONFIG_FILE`
+
+If set to a valid path pointing to a file containing a _valid_ Renovate configuration in `JSON` format, it will be applied to the repository config before resolving the actual configuration file within the repository.
+
+!!! warning
+  If the file is missing or contains invalid configuration, the scan will be aborted.
+
+!!! note
+  You probably **shouldn’t use this** unless you have a very specific reason to override the repository’s normal configuration resolution process.
 
 ## `RENOVATE_X_SUPPRESS_PRE_COMMIT_WARNING`
 
@@ -127,7 +172,10 @@ Suppress the pre-commit support warning in PR bodies.
 
 ## `RENOVATE_X_USE_OPENPGP`
 
-Use `openpgp` instead of `kbpgp` for `PGP` decryption.
+!!! note
+  Incompatible with `RENOVATE_X_PGP_RUNTIME`.
+
+Use `openpgp` instead of [Bouncy Castle](https://www.bouncycastle.org/) for `PGP` decryption.
 
 ## `RENOVATE_X_YARN_PROXY`
 

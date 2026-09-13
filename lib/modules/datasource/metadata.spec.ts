@@ -1,18 +1,19 @@
-import type { Timestamp } from '../../util/timestamp';
-import { GitTagsDatasource } from './git-tags';
-import { HelmDatasource } from './helm';
-import { MavenDatasource } from './maven';
+import { hostRules } from '~test/host-rules.ts';
+import { partial } from '~test/util.ts';
+import type { Timestamp } from '../../util/timestamp.ts';
+import { GitTagsDatasource } from './git-tags/index.ts';
+import { HelmDatasource } from './helm/index.ts';
+import { MavenDatasource } from './maven/index.ts';
 import {
   addMetaData,
   massageGithubUrl,
+  massageGitlabUrl,
   massageUrl,
   shouldDeleteHomepage,
-} from './metadata';
-import { NpmDatasource } from './npm';
-import { PypiDatasource } from './pypi';
-import type { ReleaseResult } from './types';
-import { hostRules } from '~test/host-rules';
-import { partial } from '~test/util';
+} from './metadata.ts';
+import { NpmDatasource } from './npm/index.ts';
+import { PypiDatasource } from './pypi/index.ts';
+import type { ReleaseResult } from './types.ts';
 
 describe('modules/datasource/metadata', () => {
   it('Should handle manualChangelogUrls', () => {
@@ -41,9 +42,10 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'pycountry';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       changelogUrl:
         'https://github.com/flyingcircusio/pycountry/blob/master/HISTORY.txt',
+      sourceUrl: 'https://github.com/flyingcircusio/pycountry',
     });
   });
 
@@ -73,7 +75,7 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'mkdocs';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       sourceUrl: 'https://github.com/mkdocs/mkdocs',
     });
   });
@@ -104,7 +106,7 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'django-filter';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       sourceUrl: 'https://github.com/carltongibson/django-filter',
     });
   });
@@ -125,6 +127,7 @@ describe('modules/datasource/metadata', () => {
       addMetaData(dep, datasource, packageName);
       expect(dep).toMatchObject({
         sourceUrl: expectedSourceUrl,
+        sourceDirectory: expectedSourceDirectory,
       });
     },
   );
@@ -136,7 +139,7 @@ describe('modules/datasource/metadata', () => {
     ${'git@somehost.com:group/sub-group/repo.git'} | ${'https://somehost.com/group/sub-group/repo'}
   `(
     'Should fallback to massagedUrl for sourceUrl for non Github non HTTP(S) hosts: $sourceUrl -> $expectedSourceUrl',
-    ({ sourceUrl, expectedSourceUrl, expectedSourceDirectory }) => {
+    ({ sourceUrl, expectedSourceUrl }) => {
       const dep: ReleaseResult = { sourceUrl, releases: [] };
       const datasource = GitTagsDatasource.id;
       const packageName = 'some-dep';
@@ -218,7 +221,7 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'django-filter';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       sourceUrl: 'https://github.com/some/repo',
     });
   });
@@ -241,7 +244,7 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'dropzone';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       sourceUrl: 'https://gitlab.com/meno/dropzone',
     });
   });
@@ -264,7 +267,7 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'dropzone';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       sourceUrl: 'https://gitlab-nope',
     });
   });
@@ -287,7 +290,7 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'dropzone';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).toMatchSnapshot({
+    expect(dep).toMatchObject({
       sourceUrl: 'https://nope-nope-nope',
     });
   });
@@ -310,8 +313,18 @@ describe('modules/datasource/metadata', () => {
     const packageName = 'dropzone';
 
     addMetaData(dep, datasource, packageName);
-    expect(dep).not.toContainKey('sourceUrl');
-    expect(dep).toMatchSnapshot();
+    expect(dep).toEqual({
+      releases: [
+        {
+          version: '5.7.0',
+          releaseTimestamp: '2020-02-14T13:12:00.000Z',
+        },
+        {
+          version: '5.6.1',
+          releaseTimestamp: '2020-02-14T10:04:00.000Z',
+        },
+      ],
+    });
   });
 
   it('Should handle parsing/converting of GitHub sourceUrls with http and www correctly', () => {
@@ -451,6 +464,12 @@ describe('modules/datasource/metadata', () => {
     expect(massageGithubUrl('git://example.com/foo/bar')).toMatch(
       'https://example.com/foo/bar',
     );
+  });
+
+  it('Should massage gitlab git url to valid https url', () => {
+    expect(
+      massageGitlabUrl('git://example.gitlab-dedicated.com/foo/bar'),
+    ).toMatch('https://example.gitlab-dedicated.com/foo/bar');
   });
 
   it('Should remove homepage when homepage and sourceUrl are same', () => {

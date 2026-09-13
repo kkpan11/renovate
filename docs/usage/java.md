@@ -5,7 +5,7 @@ description: Java versions support in Renovate
 
 # Java Dependency Updates
 
-Renovate can update Gradle and Maven dependencies.
+Renovate can update Gradle, Maven, and Ant dependencies.
 This includes libraries and plugins as well as the Gradle Wrapper.
 
 ## LTS releases
@@ -36,6 +36,7 @@ Renovate can update:
 - `*.versions.toml` files in any directory or `*.toml` files inside the `gradle`
   directory ([Gradle Version Catalogs docs](https://docs.gradle.org/current/userguide/platforms.html))
 - `versions.props` and `versions.lock` from the [gradle-consistent-versions](https://github.com/palantir/gradle-consistent-versions) plugin
+- `gradle/verification-metadata.xml` signatures and checksums for [dependency verification](./modules/manager/gradle/index.md#dependency-verification)
 
 Renovate does not support:
 
@@ -116,7 +117,7 @@ The manager for Gradle makes use of the `maven` datasource.
 Renovate can be configured to access more repositories and access repositories authenticated.
 
 This example shows how you can use a `config.js` file to configure Renovate for use with Artifactory.
-We're using environment variables to pass the Artifactory username and password to Renovate bot.
+We're using environment variables to pass the Artifactory username and password to Renovate.
 
 ```js title="config.js"
 module.exports = {
@@ -165,7 +166,6 @@ To avoid JSON-in-JSON wrapping, which can cause problems, encode the JSON servic
 1. Download your JSON service account and store it on your machine. Make sure that the service account has `read` (and only `read`) permissions to your artifacts
 2. Base64 encode the service account credentials by running `cat service-account.json | base64`
 3. Add the encoded service account to your configuration file
-
    1. If you want to add it to your self-hosted configuration file:
 
       ```json
@@ -200,9 +200,13 @@ To avoid JSON-in-JSON wrapping, which can cause problems, encode the JSON servic
 
    ```json
    {
-     "matchManagers": ["maven", "gradle"],
-     "registryUrls": [
-       "https://europe-maven.pkg.dev/<my-gcp-project>/<my-repository>"
+     "packageRules": [
+       {
+         "matchManagers": ["maven", "gradle"],
+         "registryUrls": [
+           "https://europe-maven.pkg.dev/<my-gcp-project>/<my-repository>"
+         ]
+       }
      ]
    }
    ```

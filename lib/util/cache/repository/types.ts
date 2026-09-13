@@ -2,10 +2,11 @@ import type {
   RepositoryCacheConfig,
   RepositoryCacheType,
   UpdateType,
-} from '../../../config/types';
-import type { PackageFile } from '../../../modules/manager/types';
-import type { RepoInitConfig } from '../../../workers/repository/init/types';
-import type { PrBlockedBy } from '../../../workers/types';
+} from '../../../config/types.ts';
+import type { PackageFile } from '../../../modules/manager/types.ts';
+import type { RepoInitConfig } from '../../../workers/repository/init/types.ts';
+import type { ExtractResult } from '../../../workers/repository/process/extract-update.ts';
+import type { PrBlockedBy } from '../../../workers/types.ts';
 
 export interface BaseBranchCache {
   revision?: number;
@@ -22,16 +23,18 @@ export interface BranchUpgradeCache {
   depName?: string;
   depType?: string;
   displayPending?: unknown;
+  manager?: string;
   fixedVersion?: string;
   currentVersion?: string;
   packageName?: string;
-  newDigest?: string;
+  newDigest?: string | null;
   newValue?: string;
   newVersion?: string;
   sourceUrl?: string;
   packageFile?: string;
   remediationNotPossible?: unknown;
   updateType?: UpdateType;
+  isVulnerabilityAlert?: boolean;
 }
 
 export interface OnboardingBranchCache {
@@ -46,6 +49,7 @@ export interface OnboardingBranchCache {
 export interface ReconfigureBranchCache {
   reconfigureBranchSha: string;
   isConfigValid: boolean;
+  extractResult?: ExtractResult;
 }
 
 export interface PrCache {
@@ -78,6 +82,11 @@ export interface BranchCache {
    */
   branchFingerprint?: string; // Defunct
   commitFingerprint?: string; // Actively used
+  /**
+   * The branch's most recent commit timestamp (ISO string)
+   * Used for commitHourlyLimit tracking
+   */
+  commitTimestamp?: string;
   /**
    * Branch name
    */
@@ -126,12 +135,17 @@ export interface BranchCache {
 export interface RepoCacheData {
   configFileName?: string;
   httpCache?: Record<string, unknown>;
+  httpCacheHead?: Record<string, unknown>;
   semanticCommits?: 'enabled' | 'disabled';
   branches?: BranchCache[];
   init?: RepoInitConfig;
   scan?: Record<string, BaseBranchCache>;
   lastPlatformAutomergeFailure?: string;
   platform?: {
+    forgejo?: {
+      pullRequestsCache?: unknown;
+      orgs?: Record<string, boolean>;
+    };
     gitea?: {
       pullRequestsCache?: unknown;
     };
@@ -146,7 +160,10 @@ export interface RepoCacheData {
     bitbucket?: {
       pullRequestsCache?: unknown;
     };
-    bitbucketServer?: {
+    gitlab?: {
+      pullRequestsCache?: unknown;
+    };
+    'bitbucket-server'?: {
       pullRequestsCache?: unknown;
     };
   };

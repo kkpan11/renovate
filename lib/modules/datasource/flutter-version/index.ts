@@ -1,9 +1,9 @@
-import { regEx } from '../../../util/regex';
-import { asTimestamp } from '../../../util/timestamp';
-import { id as semverId } from '../../versioning/semver';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
-import type { FlutterResponse } from './types';
+import { regEx } from '../../../util/regex.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import { id as semverId } from '../../versioning/semver/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, ReleaseResult } from '../types.ts';
+import { FlutterResponse } from './schema.ts';
 
 export const stableVersionRegex = regEx(/^\d+\.\d+\.\d+$/);
 
@@ -32,7 +32,7 @@ export class FlutterVersionDatasource extends Datasource {
   async getReleases({
     registryUrl,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
-    /* v8 ignore next 3 -- should never happen */
+    /* v8 ignore next -- should never happen */
     if (!registryUrl) {
       return null;
     }
@@ -44,8 +44,9 @@ export class FlutterVersionDatasource extends Datasource {
     };
     try {
       const resp = (
-        await this.http.getJsonUnchecked<FlutterResponse>(
+        await this.http.getJson(
           `${registryUrl}/flutter_infra_release/releases/releases_linux.json`,
+          FlutterResponse,
         )
       ).body;
       result.releases = resp.releases

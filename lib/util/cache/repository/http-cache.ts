@@ -1,8 +1,8 @@
 import { DateTime } from 'luxon';
-import { GlobalConfig } from '../../../config/global';
-import { logger } from '../../../logger';
-import { HttpCacheSchema } from '../../http/cache/schema';
-import type { RepoCacheData } from './types';
+import { GlobalConfig } from '../../../config/global.ts';
+import { logger } from '../../../logger/index.ts';
+import { HttpCache } from '../../http/cache/schema.ts';
+import type { RepoCacheData } from './types.ts';
 
 export function cleanupHttpCache(cacheData: RepoCacheData): void {
   const { httpCache } = cacheData;
@@ -11,7 +11,7 @@ export function cleanupHttpCache(cacheData: RepoCacheData): void {
     return;
   }
 
-  const ttlDays = GlobalConfig.get('httpCacheTtlDays', 90);
+  const ttlDays = GlobalConfig.get('httpCacheTtlDays');
   if (ttlDays === 0) {
     logger.trace('cleanupHttpCache: zero value received, removing the cache');
     delete cacheData.httpCache;
@@ -20,7 +20,8 @@ export function cleanupHttpCache(cacheData: RepoCacheData): void {
 
   const now = DateTime.now();
   for (const [url, item] of Object.entries(httpCache)) {
-    const parsed = HttpCacheSchema.safeParse(item);
+    const parsed = HttpCache.safeParse(item);
+    // v8 ignore else -- TODO: add test #40625
     if (parsed.success && parsed.data) {
       const item = parsed.data;
       const expiry = DateTime.fromISO(item.timestamp).plus({ days: ttlDays });

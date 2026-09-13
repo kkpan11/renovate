@@ -1,11 +1,13 @@
-import * as _cache from '../../../util/cache/repository';
-import type { RepoCacheData } from '../../../util/cache/repository/types';
+import { partial } from '~test/util.ts';
+import * as _cache from '../../../util/cache/repository/index.ts';
+import type { RepoCacheData } from '../../../util/cache/repository/types.ts';
+import type { BranchConfig } from '../../types.ts';
 import {
   deleteReconfigureBranchCache,
   setReconfigureBranchCache,
-} from './reconfigure-cache';
+} from './reconfigure-cache.ts';
 
-vi.mock('../../../util/cache/repository');
+vi.mock('../../../util/cache/repository/index.ts');
 
 const cache = vi.mocked(_cache);
 
@@ -28,6 +30,28 @@ describe('workers/repository/reconfigure/reconfigure-cache', () => {
         reconfigureBranchCache: {
           reconfigureBranchSha: 'reconfigure-sha',
           isConfigValid: false,
+        },
+      } satisfies RepoCacheData;
+      cache.getCache.mockReturnValue(dummyCache);
+      setReconfigureBranchCache('reconfigure-sha-1', false);
+      expect(dummyCache).toEqual({
+        reconfigureBranchCache: {
+          reconfigureBranchSha: 'reconfigure-sha-1',
+          isConfigValid: false,
+        },
+      });
+    });
+
+    it('updates extractResult old cache', () => {
+      const dummyCache = {
+        reconfigureBranchCache: {
+          reconfigureBranchSha: 'reconfigure-sha',
+          isConfigValid: false,
+          extractResult: {
+            branches: [partial<BranchConfig>()],
+            branchList: ['some-branch'],
+            packageFiles: {},
+          },
         },
       } satisfies RepoCacheData;
       cache.getCache.mockReturnValue(dummyCache);

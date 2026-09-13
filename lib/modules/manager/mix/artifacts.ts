@@ -1,9 +1,10 @@
-import is from '@sindresorhus/is';
+import { isEmptyArray, isString } from '@sindresorhus/is';
 import { quote } from 'shlex';
-import { TEMPORARY_ERROR } from '../../../constants/error-messages';
-import { logger } from '../../../logger';
-import { exec } from '../../../util/exec';
-import type { ExecOptions } from '../../../util/exec/types';
+import { GlobalConfig } from '../../../config/global.ts';
+import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
+import { logger } from '../../../logger/index.ts';
+import { exec } from '../../../util/exec/index.ts';
+import type { ExecOptions } from '../../../util/exec/types.ts';
 import {
   deleteLocalFile,
   ensureCacheDir,
@@ -12,11 +13,11 @@ import {
   localPathExists,
   readLocalFile,
   writeLocalFile,
-} from '../../../util/fs';
-import * as hostRules from '../../../util/host-rules';
-import { regEx } from '../../../util/regex';
+} from '../../../util/fs/index.ts';
+import * as hostRules from '../../../util/host-rules.ts';
+import { regEx } from '../../../util/regex.ts';
 
-import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
+import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
 
 const hexRepoUrl = 'https://hex.pm/';
 const hexRepoOrgUrlRegex = regEx(
@@ -32,7 +33,7 @@ export async function updateArtifacts({
   logger.debug(`mix.getArtifacts(${packageFileName})`);
   const { isLockFileMaintenance } = config;
 
-  if (is.emptyArray(updatedDeps) && !isLockFileMaintenance) {
+  if (isEmptyArray(updatedDeps) && !isLockFileMaintenance) {
     logger.debug('No updated mix deps');
     return null;
   }
@@ -67,7 +68,7 @@ export async function updateArtifacts({
 
   if (isLockFileMaintenance && isUmbrella) {
     logger.debug(
-      'Cannot use lockFileMaintenance in an umbrella project, see https://docs.renovatebot.com/modules/manager/mix/#lockFileMaintenance',
+      `Cannot use lockFileMaintenance in an umbrella project, see ${GlobalConfig.get('productLinks').documentation}modules/manager/mix/#lockFileMaintenance`,
     );
     return null;
   }
@@ -89,7 +90,7 @@ export async function updateArtifacts({
     return [
       {
         artifactError: {
-          lockFile: lockFileName,
+          fileName: lockFileName,
           stderr: err.message,
         },
       },
@@ -137,12 +138,15 @@ export async function updateArtifacts({
 
     if (token) {
       logger.debug(`Authenticating to hex organization ${organization}`);
-      const authCommand = `mix hex.organization auth ${organization} --key ${token}`;
+      const authCommand = `mix hex.organization auth ${quote(organization)} --key ${quote(token)}`;
       return [...acc, authCommand];
     }
 
     return acc;
   }, [] as string[]);
+
+  // renovate: will update this
+  const erlangVersion = '26';
 
   const execOptions: ExecOptions = {
     extraEnv: {
@@ -150,13 +154,13 @@ export async function updateArtifacts({
       // TODO: should include a version constraint
       MIX_ARCHIVES: await ensureCacheDir('mix_archives'),
     },
-    cwdFile: packageFileName,
+    cwdFile: lockFileName,
     docker: {},
     toolConstraints: [
       {
         toolName: 'erlang',
         // https://hexdocs.pm/elixir/1.14.5/compatibility-and-deprecations.html#compatibility-between-elixir-and-erlang-otp
-        constraint: config.constraints?.erlang ?? '^26',
+        constraint: config.constraints?.erlang ?? `^${erlangVersion}`,
       },
       {
         toolName: 'elixir',
@@ -175,7 +179,7 @@ export async function updateArtifacts({
       'deps.update',
       ...updatedDeps
         .map((dep) => dep.depName)
-        .filter(is.string)
+        .filter(isString)
         .map((dep) => quote(dep)),
     ].join(' ');
   }
@@ -183,7 +187,7 @@ export async function updateArtifacts({
   try {
     await exec(command, execOptions);
   } catch (err) {
-    /* v8 ignore next 3 */
+    /* v8 ignore if -- defensive rethrow of TEMPORARY_ERROR from exec, not reproduced in mix specs */
     if (err.message === TEMPORARY_ERROR) {
       throw err;
     }
@@ -196,7 +200,7 @@ export async function updateArtifacts({
     return [
       {
         artifactError: {
-          lockFile: lockFileName,
+          fileName: lockFileName,
           stderr: err.message,
         },
       },
@@ -227,7 +231,7 @@ async function checkLockFileReadError(
     return [
       {
         artifactError: {
-          lockFile: lockFileName,
+          fileName: lockFileName,
           stderr: `Error reading ${lockFileName}`,
         },
       },

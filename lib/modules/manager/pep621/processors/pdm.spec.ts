@@ -1,31 +1,46 @@
-import { join } from 'upath';
-import { GlobalConfig } from '../../../../config/global';
-import type { RepoGlobalConfig } from '../../../../config/types';
-import { logger } from '../../../../logger';
-import * as hostRules from '../../../../util/host-rules';
-import { getPkgReleases as _getPkgReleases } from '../../../datasource';
-import type { UpdateArtifactsConfig } from '../../types';
-import { depTypes } from '../utils';
-import { PdmProcessor } from './pdm';
-import { mockExecAll } from '~test/exec-util';
-import { fs } from '~test/util';
+import upath from 'upath';
+import { mockExecAll } from '~test/exec-util.ts';
+import { fs, partial } from '~test/util.ts';
+import { GlobalConfig } from '../../../../config/global.ts';
+import type {
+  InternalGlobalConfigOptions,
+  RepoGlobalConfig,
+} from '../../../../config/types.ts';
+import { TEMPORARY_ERROR } from '../../../../constants/error-messages.ts';
+import { logger } from '../../../../logger/index.ts';
+import * as hostRules from '../../../../util/host-rules.ts';
+import { getPkgReleases as _getPkgReleases } from '../../../datasource/index.ts';
+import type { UpdateArtifact, UpdateArtifactsConfig } from '../../types.ts';
+import { parsePyProject } from '../extract.ts';
+import { depTypes } from '../utils.ts';
+import { PdmProcessor } from './pdm.ts';
 
-vi.mock('../../../../util/fs');
-vi.mock('../../../datasource');
+vi.mock('../../../../util/fs/index.ts');
+vi.mock('../../../datasource/index.ts');
 
 const getPkgReleases = vi.mocked(_getPkgReleases);
 
 const config: UpdateArtifactsConfig = {};
-const adminConfig: RepoGlobalConfig = {
-  localDir: join('/tmp/github/some/repo'),
-  cacheDir: join('/tmp/cache'),
-  containerbaseDir: join('/tmp/cache/containerbase'),
+const adminConfig: RepoGlobalConfig & InternalGlobalConfigOptions = {
+  localDir: upath.join('/tmp/github/some/repo'),
+  cacheDir: upath.join('/tmp/cache'),
+  containerbaseDir: upath.join('/tmp/cache/containerbase'),
+  binarySource: 'global',
 };
 
 const processor = new PdmProcessor();
 
 describe('modules/manager/pep621/processors/pdm', () => {
   describe('updateArtifacts()', () => {
+    it('throws TEMPORARY_ERROR', async () => {
+      fs.readLocalFile.mockRejectedValueOnce(new Error(TEMPORARY_ERROR));
+      const result = processor.updateArtifacts(
+        partial<UpdateArtifact>({ config: {} }),
+        partial(),
+      );
+      await expect(result).rejects.toThrow(TEMPORARY_ERROR);
+    });
+
     it('return null if there is no lock file', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('pdm.lock');
       const updatedDeps = [{ packageName: 'dep1' }];
@@ -36,7 +51,7 @@ describe('modules/manager/pep621/processors/pdm', () => {
           config,
           updatedDeps,
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toBeNull();
     });
@@ -46,7 +61,7 @@ describe('modules/manager/pep621/processors/pdm', () => {
       GlobalConfig.set({
         ...adminConfig,
         binarySource: 'docker',
-        dockerSidecarImage: 'ghcr.io/containerbase/sidecar',
+        dockerSidecarImage: 'ghcr.io/renovatebot/base-image',
       });
       fs.getSiblingFileName.mockReturnValueOnce('pdm.lock');
       fs.readLocalFile.mockResolvedValueOnce('test content');
@@ -65,15 +80,15 @@ describe('modules/manager/pep621/processors/pdm', () => {
         {
           packageFileName: 'pyproject.toml',
           newPackageFileContent: '',
-          config: {},
+          config: { constraints: {} },
           updatedDeps,
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toBeNull();
       expect(execSnapshots).toMatchObject([
         {
-          cmd: 'docker pull ghcr.io/containerbase/sidecar',
+          cmd: 'docker pull ghcr.io/renovatebot/base-image',
         },
         {
           cmd: 'docker ps --filter name=renovate_sidecar -aq',
@@ -83,16 +98,17 @@ describe('modules/manager/pep621/processors/pdm', () => {
             'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
             '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
             '-v "/tmp/cache":"/tmp/cache" ' +
+            '-e CI ' +
             '-e CONTAINERBASE_CACHE_DIR ' +
             '-w "/tmp/github/some/repo" ' +
-            'ghcr.io/containerbase/sidecar ' +
-            'bash -l -c "' +
+            'ghcr.io/renovatebot/base-image ' +
+            "bash -l -c '" +
             'install-tool python 3.11.2 ' +
             '&& ' +
             'install-tool pdm v2.5.0 ' +
             '&& ' +
             'pdm update --no-sync --update-eager dep1' +
-            '"',
+            "'",
         },
       ]);
     });
@@ -113,10 +129,10 @@ describe('modules/manager/pep621/processors/pdm', () => {
           config: {},
           updatedDeps,
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toEqual([
-        { artifactError: { lockFile: 'pdm.lock', stderr: 'test error' } },
+        { artifactError: { fileName: 'pdm.lock', stderr: 'test error' } },
       ]);
       expect(execSnapshots).toEqual([]);
     });
@@ -186,7 +202,7 @@ describe('modules/manager/pep621/processors/pdm', () => {
           config: {},
           updatedDeps,
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toEqual([
         {
@@ -252,7 +268,7 @@ describe('modules/manager/pep621/processors/pdm', () => {
           config: {},
           updatedDeps,
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toBeNull();
       expect(execSnapshots).toEqual([]);
@@ -283,7 +299,7 @@ describe('modules/manager/pep621/processors/pdm', () => {
           },
           updatedDeps: [],
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toEqual([
         {
@@ -333,7 +349,7 @@ describe('modules/manager/pep621/processors/pdm', () => {
           },
           updatedDeps: [],
         },
-        {},
+        parsePyProject('')!,
       );
       expect(result).toEqual([
         {

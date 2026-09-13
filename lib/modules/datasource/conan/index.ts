@@ -1,25 +1,26 @@
-import is from '@sindresorhus/is';
-import { logger } from '../../../logger';
-import { cache } from '../../../util/cache/package/decorator';
-import { GithubHttp } from '../../../util/http/github';
-import { ensureTrailingSlash, joinUrlParts } from '../../../util/url';
-import * as allVersioning from '../../versioning';
-import { Datasource } from '../datasource';
+import { isString, isUndefined } from '@sindresorhus/is';
+import { logger } from '../../../logger/index.ts';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { GithubHttp } from '../../../util/http/github.ts';
+import { regEx } from '../../../util/regex.ts';
+import { ensureTrailingSlash, joinUrlParts } from '../../../util/url.ts';
+import * as allVersioning from '../../versioning/index.ts';
+import { Datasource } from '../datasource.ts';
 import type {
   DigestConfig,
   GetReleasesConfig,
   Release,
   ReleaseResult,
-} from '../types';
-import { isArtifactoryServer } from '../util';
-import { datasource, defaultRegistryUrl, getConanPackage } from './common';
+} from '../types.ts';
+import { isArtifactoryServer } from '../util.ts';
+import { datasource, defaultRegistryUrl, getConanPackage } from './common.ts';
 import {
   ConanCenterReleases,
   ConanJSON,
   ConanLatestRevision,
   ConanProperties,
   ConanRevisionJSON,
-} from './schema';
+} from './schema.ts';
 
 export class ConanDatasource extends Datasource {
   static readonly id = datasource;
@@ -61,17 +62,11 @@ export class ConanDatasource extends Datasource {
     return result;
   }
 
-  @cache({
-    namespace: `datasource-${datasource}`,
-    key: ({ registryUrl, packageName }: DigestConfig, newValue?: string) =>
-      // TODO: types (#22198)
-      `getDigest:${registryUrl!}:${packageName}:${newValue!}`,
-  })
-  override async getDigest(
+  private async _getDigest(
     { registryUrl, packageName }: DigestConfig,
     newValue?: string,
   ): Promise<string | null> {
-    if (is.undefined(newValue) || is.undefined(registryUrl)) {
+    if (isUndefined(newValue) || isUndefined(registryUrl)) {
       return null;
     }
     const url = ensureTrailingSlash(registryUrl);
@@ -91,20 +86,29 @@ export class ConanDatasource extends Datasource {
     return digest;
   }
 
-  @cache({
-    namespace: `datasource-${datasource}`,
-    key: ({ registryUrl, packageName }: GetReleasesConfig) =>
-      // TODO: types (#22198)
-      `getReleases:${registryUrl}:${packageName}`,
-  })
-  async getReleases({
+  override getDigest(
+    config: DigestConfig,
+    newValue?: string,
+  ): Promise<string | null> {
+    return withCache(
+      {
+        namespace: `datasource-${datasource}`,
+        // TODO: types (#22198)
+        key: `getDigest:${config.registryUrl!}:${config.packageName}:${newValue!}`,
+        fallback: true,
+      },
+      () => this._getDigest(config, newValue),
+    );
+  }
+
+  private async _getReleases({
     registryUrl,
     packageName,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
     const conanPackage = getConanPackage(packageName);
-    const userAndChannel = '@' + conanPackage.userAndChannel;
+    const userAndChannel = `@${conanPackage.userAndChannel}`;
     if (
-      is.string(registryUrl) &&
+      isString(registryUrl) &&
       ensureTrailingSlash(registryUrl) === defaultRegistryUrl
     ) {
       return this.getConanCenterReleases(
@@ -126,8 +130,8 @@ export class ConanDatasource extends Datasource {
       );
 
       try {
-        const rep = await this.http.getJsonUnchecked(lookupUrl);
-        const conanJson = ConanJSON.parse(rep.body);
+        const rep = await this.http.getJson(lookupUrl, ConanJSON);
+        const conanJson = rep.body;
         if (conanJson) {
           logger.trace({ lookupUrl }, 'Got conan api result');
           const dep: ReleaseResult = { releases: [] };
@@ -139,8 +143,9 @@ export class ConanDatasource extends Datasource {
 
           try {
             if (isArtifactoryServer(rep)) {
-              const conanApiRegexp =
-                /(?<host>.*)\/artifactory\/api\/conan\/(?<repo>[^/]+)/;
+              const conanApiRegexp = regEx(
+                /(?<host>.*)\/artifactory\/api\/conan\/(?<repo>[^/]+)/,
+              );
               const groups = conanApiRegexp.exec(url)?.groups;
               if (!groups) {
                 return dep;
@@ -193,5 +198,17 @@ export class ConanDatasource extends Datasource {
     }
 
     return null;
+  }
+
+  getReleases(config: GetReleasesConfig): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: `datasource-${datasource}`,
+        // TODO: types (#22198)
+        key: `getReleases:${config.registryUrl}:${config.packageName}`,
+        fallback: true,
+      },
+      () => this._getReleases(config),
+    );
   }
 }

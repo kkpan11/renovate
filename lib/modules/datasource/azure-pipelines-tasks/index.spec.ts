@@ -1,10 +1,10 @@
-import { getPkgReleases } from '..';
-import { GlobalConfig } from '../../../config/global';
-import * as hostRules from '../../../util/host-rules';
-import { AzurePipelinesTask } from './schema';
-import { AzurePipelinesTasksDatasource } from '.';
-import { Fixtures } from '~test/fixtures';
-import * as httpMock from '~test/http-mock';
+import { Fixtures } from '~test/fixtures.ts';
+import * as httpMock from '~test/http-mock.ts';
+import { GlobalConfig } from '../../../config/global.ts';
+import * as hostRules from '../../../util/host-rules.ts';
+import { getPkgReleases } from '../index.ts';
+import { AzurePipelinesTasksDatasource } from './index.ts';
+import { AzurePipelinesTask } from './schema.ts';
 
 const gitHubHost = 'https://raw.githubusercontent.com';
 const builtinTasksPath =
@@ -25,12 +25,12 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .reply(200, {})
       .get(marketplaceTasksPath)
       .reply(200, {});
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: 'unknown',
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('supports built-in tasks', async () => {
@@ -38,12 +38,14 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .scope(gitHubHost)
       .get(builtinTasksPath)
       .reply(200, { automatedanalysis: ['0.171.0', '0.198.0'] });
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: 'AutomatedAnalysis',
       }),
-    ).toEqual({ releases: [{ version: '0.171.0' }, { version: '0.198.0' }] });
+    ).resolves.toEqual({
+      releases: [{ version: '0.171.0' }, { version: '0.198.0' }],
+    });
   });
 
   it('supports marketplace tasks', async () => {
@@ -53,12 +55,14 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .reply(200, {})
       .get(marketplaceTasksPath)
       .reply(200, { 'automatedanalysis-marketplace': ['0.171.0', '0.198.0'] });
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: 'AutomatedAnalysis-Marketplace',
       }),
-    ).toEqual({ releases: [{ version: '0.171.0' }, { version: '0.198.0' }] });
+    ).resolves.toEqual({
+      releases: [{ version: '0.171.0' }, { version: '0.198.0' }],
+    });
   });
 
   it('is case insensitive', async () => {
@@ -66,12 +70,14 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .scope(gitHubHost)
       .get(builtinTasksPath)
       .reply(200, { automatedanalysis: ['0.171.0', '0.198.0'] });
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: 'automatedanalysis',
       }),
-    ).toEqual({ releases: [{ version: '0.171.0' }, { version: '0.198.0' }] });
+    ).resolves.toEqual({
+      releases: [{ version: '0.171.0' }, { version: '0.198.0' }],
+    });
   });
 
   it('returns organization task with single version', async () => {
@@ -91,14 +97,16 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .get('/_apis/distributedtask/tasks/')
       .reply(200, Fixtures.get('tasks.json'));
 
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: 'AzurePowerShell',
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       releases: [
         {
+          changelogContent:
+            'Added support for Az Module and cross platform agents.',
           changelogUrl:
             'https://github.com/microsoft/azure-pipelines-tasks/releases',
           version: '5.248.3',
@@ -121,12 +129,12 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .scope('https://my.custom.domain')
       .get('/_apis/distributedtask/tasks/')
       .reply(200, Fixtures.get('tasks.json'));
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: '5d437bf5-f193-4449-b531-c4c69eebaa48',
       }),
-    ).toEqual({ releases: [{ version: '3.1.11' }] });
+    ).resolves.toEqual({ releases: [{ version: '3.1.11' }] });
   });
 
   it('identifies task based on contributionIdentifier and id', async () => {
@@ -143,13 +151,13 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .scope('https://my.custom.domain')
       .get('/_apis/distributedtask/tasks/')
       .reply(200, Fixtures.get('tasks.json'));
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName:
           'gittools.gittools.open-gitreleasemanager-task.5d437bf5-f193-4449-b531-c4c69eebaa48',
       }),
-    ).toEqual({ releases: [{ version: '3.1.11' }] });
+    ).resolves.toEqual({ releases: [{ version: '3.1.11' }] });
   });
 
   it('identifies task based on contributionIdentifier and name', async () => {
@@ -166,13 +174,13 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .scope('https://my.custom.domain')
       .get('/_apis/distributedtask/tasks/')
       .reply(200, Fixtures.get('tasks.json'));
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName:
           'gittools.gittools.open-gitreleasemanager-task.gitreleasemanager/open',
       }),
-    ).toEqual({ releases: [{ version: '3.1.11' }] });
+    ).resolves.toEqual({ releases: [{ version: '3.1.11' }] });
   });
 
   it('returns organization task with multiple versions', async () => {
@@ -192,12 +200,12 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
       .get('/_apis/distributedtask/tasks/')
       .reply(200, Fixtures.get('tasks.json'));
 
-    expect(
-      await getPkgReleases({
+    await expect(
+      getPkgReleases({
         datasource: AzurePipelinesTasksDatasource.id,
         packageName: 'PowerShell',
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       releases: [
         {
           changelogUrl:
@@ -206,6 +214,8 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
           version: '1.2.3',
         },
         {
+          changelogContent:
+            'Script task consistency. Added support for macOS and Linux.',
           changelogUrl:
             'https://github.com/microsoft/azure-pipelines-tasks/releases',
           version: '2.247.1',
@@ -229,9 +239,9 @@ describe('modules/datasource/azure-pipelines-tasks/index', () => {
         const version =
           splitted.length === 3
             ? {
-                major: Number(splitted[0]),
-                minor: Number(splitted[1]),
-                patch: Number(splitted[2]),
+                major: parseInt(splitted[0], 10),
+                minor: parseInt(splitted[1], 10),
+                patch: parseInt(splitted[2], 10),
               }
             : null;
 

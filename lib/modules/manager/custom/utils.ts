@@ -1,6 +1,6 @@
-import is from '@sindresorhus/is';
-import { logger } from '../../../logger';
-import type { PackageDependency } from '../types';
+import { isNonEmptyStringAndNotWhitespace } from '@sindresorhus/is';
+import { logger } from '../../../logger/index.ts';
+import type { PackageDependency } from '../types.ts';
 
 export const validMatchFields = [
   'depName',
@@ -15,8 +15,6 @@ export const validMatchFields = [
   'indentation',
 ] as const;
 
-export type ValidMatchFields = (typeof validMatchFields)[number];
-
 export function isValidDependency({
   depName,
   currentValue,
@@ -26,11 +24,11 @@ export function isValidDependency({
 }: PackageDependency): boolean {
   // check if all the fields are set
   return (
-    (is.nonEmptyStringAndNotWhitespace(depName) ||
-      is.nonEmptyStringAndNotWhitespace(packageName)) &&
-    (is.nonEmptyStringAndNotWhitespace(currentDigest) ||
-      is.nonEmptyStringAndNotWhitespace(currentValue)) &&
-    is.nonEmptyStringAndNotWhitespace(datasource)
+    (isNonEmptyStringAndNotWhitespace(depName) ||
+      isNonEmptyStringAndNotWhitespace(packageName)) &&
+    (isNonEmptyStringAndNotWhitespace(currentDigest) ||
+      isNonEmptyStringAndNotWhitespace(currentValue)) &&
+    isNonEmptyStringAndNotWhitespace(datasource)
   );
 }
 

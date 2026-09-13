@@ -1,13 +1,13 @@
-import { getConfig } from './defaults';
+import { getConfig } from './defaults.ts';
 import {
   filterConfig,
   getManagerConfig,
   mergeChildConfig,
   removeGlobalConfig,
-} from './index';
+} from './index.ts';
 
-vi.mock('../modules/datasource/npm');
-vi.mock('../../config.js', () => ({ default: {} }));
+vi.mock('../modules/datasource/npm/index.ts');
+vi.mock('../../config.ts', () => ({ default: {} }));
 
 const defaultConfig = getConfig();
 
@@ -26,7 +26,11 @@ describe('config/index', () => {
       expect(config.foo).toBe('bar');
       expect(config.rangeStrategy).toBe('replace');
       expect(config.lockFileMaintenance.schedule).toEqual(['on monday']);
-      expect(config.lockFileMaintenance).toMatchSnapshot();
+      expect(config.lockFileMaintenance).toMatchObject({
+        branchTopic: 'lock-file-maintenance',
+        enabled: false,
+        schedule: ['on monday'],
+      });
     });
 
     it('merges packageRules', () => {
@@ -66,8 +70,10 @@ describe('config/index', () => {
         },
       };
       const config = mergeChildConfig(parentConfig, childConfig);
-      expect(config.constraints).toMatchSnapshot();
-      expect(config.constraints.node).toBe('<15');
+      expect(config.constraints).toEqual({
+        node: '<15',
+        npm: '^6.0.0',
+      });
     });
 
     it('merges forced options', () => {
@@ -97,7 +103,7 @@ describe('config/index', () => {
       const childConfig = {
         packageRules: [{ a: 3 }, { a: 4 }],
       };
-      const configParser = await import('./index.js');
+      const configParser = await import('./index.ts');
       const config = configParser.mergeChildConfig(parentConfig, childConfig);
       expect(config.packageRules).toHaveLength(2);
     });
@@ -127,7 +133,11 @@ describe('config/index', () => {
       expect(config).toContainEntries([
         [
           'managerFilePatterns',
-          ['/(^|/)package\\.json$/', '/(^|/)pnpm-workspace\\.yaml$/'],
+          [
+            '/(^|/)package\\.json$/',
+            '/(^|/)pnpm-workspace\\.yaml$/',
+            '/(^|/)\\.yarnrc\\.yml$/',
+          ],
         ],
       ]);
       expect(getManagerConfig(parentConfig, 'html')).toContainEntries([

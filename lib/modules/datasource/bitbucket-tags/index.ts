@@ -1,13 +1,16 @@
-import { cache } from '../../../util/cache/package/decorator';
-import type { PackageCacheNamespace } from '../../../util/cache/package/types';
-import { BitbucketHttp } from '../../../util/http/bitbucket';
-import { asTimestamp } from '../../../util/timestamp';
-import { ensureTrailingSlash } from '../../../util/url';
-import { RepoInfo } from '../../platform/bitbucket/schema';
-import type { PagedResult } from '../../platform/bitbucket/types';
-import { Datasource } from '../datasource';
-import type { DigestConfig, GetReleasesConfig, ReleaseResult } from '../types';
-import type { BitbucketCommit, BitbucketTag } from './types';
+import type { PackageCacheNamespace } from '../../../util/cache/package/types.ts';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { BitbucketHttp } from '../../../util/http/bitbucket.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import { ensureTrailingSlash } from '../../../util/url.ts';
+import { RepoInfo } from '../../platform/bitbucket/schema.ts';
+import { Datasource } from '../datasource.ts';
+import type {
+  DigestConfig,
+  GetReleasesConfig,
+  ReleaseResult,
+} from '../types.ts';
+import { BitbucketCommits, BitbucketTag, BitbucketTags } from './schema.ts';
 
 export class BitbucketTagsDatasource extends Datasource {
   static readonly id = 'bitbucket-tags';
@@ -55,24 +58,14 @@ export class BitbucketTagsDatasource extends Datasource {
   }
 
   // getReleases fetches list of tags for the repository
-  @cache({
-    namespace: BitbucketTagsDatasource.cacheNamespace,
-    key: ({ registryUrl, packageName }: GetReleasesConfig) =>
-      BitbucketTagsDatasource.getCacheKey(registryUrl, packageName, 'tags'),
-  })
-  async getReleases({
+  private async _getReleases({
     registryUrl,
     packageName: repo,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
     const url = `/2.0/repositories/${repo}/refs/tags`;
     const bitbucketTags = (
-      await this.bitbucketHttp.getJsonUnchecked<PagedResult<BitbucketTag>>(
-        url,
-        {
-          paginate: true,
-        },
-      )
-    ).body.values;
+      await this.bitbucketHttp.getJson(url, { paginate: true }, BitbucketTags)
+    ).body;
 
     const dependency: ReleaseResult = {
       sourceUrl: BitbucketTagsDatasource.getSourceUrl(repo, registryUrl),
@@ -87,46 +80,80 @@ export class BitbucketTagsDatasource extends Datasource {
     return dependency;
   }
 
+  getReleases(config: GetReleasesConfig): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: BitbucketTagsDatasource.cacheNamespace,
+        key: BitbucketTagsDatasource.getCacheKey(
+          config.registryUrl,
+          config.packageName,
+          'tags',
+        ),
+        fallback: true,
+      },
+      () => this._getReleases(config),
+    );
+  }
+
   // getTagCommit fetched the commit has for specified tag
-  @cache({
-    namespace: BitbucketTagsDatasource.cacheNamespace,
-    key: (registryUrl: string | undefined, repo: string, tag: string): string =>
-      BitbucketTagsDatasource.getCacheKey(registryUrl, repo, `tag-${tag}`),
-  })
-  async getTagCommit(
+  private async _getTagCommit(
     _registryUrl: string | undefined,
     repo: string,
     tag: string,
   ): Promise<string | null> {
     const url = `/2.0/repositories/${repo}/refs/tags/${tag}`;
 
-    const bitbucketTag = (
-      await this.bitbucketHttp.getJsonUnchecked<BitbucketTag>(url)
-    ).body;
+    const bitbucketTag = (await this.bitbucketHttp.getJson(url, BitbucketTag))
+      .body;
 
     return bitbucketTag.target?.hash ?? null;
   }
 
-  @cache({
-    namespace: BitbucketTagsDatasource.cacheNamespace,
-    key: (registryUrl: string, repo: string) =>
-      BitbucketTagsDatasource.getCacheKey(registryUrl, repo, 'mainbranch'),
-    ttlMinutes: 60,
-  })
-  async getMainBranch(_registryUrl: string, repo: string): Promise<string> {
+  getTagCommit(
+    registryUrl: string | undefined,
+    repo: string,
+    tag: string,
+  ): Promise<string | null> {
+    return withCache(
+      {
+        namespace: BitbucketTagsDatasource.cacheNamespace,
+        key: BitbucketTagsDatasource.getCacheKey(
+          registryUrl,
+          repo,
+          `tag-${tag}`,
+        ),
+      },
+      () => this._getTagCommit(registryUrl, repo, tag),
+    );
+  }
+
+  private async _getMainBranch(
+    _registryUrl: string,
+    repo: string,
+  ): Promise<string> {
     return (
       await this.bitbucketHttp.getJson(`/2.0/repositories/${repo}`, RepoInfo)
     ).body.mainbranch;
   }
 
+  getMainBranch(registryUrl: string, repo: string): Promise<string> {
+    return withCache(
+      {
+        namespace: BitbucketTagsDatasource.cacheNamespace,
+        key: BitbucketTagsDatasource.getCacheKey(
+          registryUrl,
+          repo,
+          'mainbranch',
+        ),
+        ttlMinutes: 60,
+      },
+      () => this._getMainBranch(registryUrl, repo),
+    );
+  }
+
   // getDigest fetched the latest commit for repository main branch
   // however, if newValue is provided, then getTagCommit is called
-  @cache({
-    namespace: BitbucketTagsDatasource.cacheNamespace,
-    key: ({ registryUrl, packageName }: DigestConfig) =>
-      BitbucketTagsDatasource.getCacheKey(registryUrl, packageName, 'digest'),
-  })
-  override async getDigest(
+  private async _getDigest(
     { packageName: repo, registryUrl }: DigestConfig,
     newValue?: string,
   ): Promise<string | null> {
@@ -141,15 +168,31 @@ export class BitbucketTagsDatasource extends Datasource {
 
     const url = `/2.0/repositories/${repo}/commits/${mainBranch}`;
     const bitbucketCommits = (
-      await this.bitbucketHttp.getJsonUnchecked<PagedResult<BitbucketCommit>>(
-        url,
-      )
+      await this.bitbucketHttp.getJson(url, BitbucketCommits)
     ).body;
 
-    if (bitbucketCommits.values.length === 0) {
+    if (bitbucketCommits.length === 0) {
       return null;
     }
 
-    return bitbucketCommits.values[0].hash;
+    return bitbucketCommits[0].hash;
+  }
+
+  override getDigest(
+    config: DigestConfig,
+    newValue?: string,
+  ): Promise<string | null> {
+    return withCache(
+      {
+        namespace: BitbucketTagsDatasource.cacheNamespace,
+        key: BitbucketTagsDatasource.getCacheKey(
+          config.registryUrl,
+          config.packageName,
+          'digest',
+        ),
+        fallback: true,
+      },
+      () => this._getDigest(config, newValue),
+    );
   }
 }

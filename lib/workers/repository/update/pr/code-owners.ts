@@ -1,16 +1,18 @@
-import is from '@sindresorhus/is';
+import { isNonEmptyString } from '@sindresorhus/is';
 import ignore from 'ignore';
-import { logger } from '../../../../logger';
-import type { Pr } from '../../../../modules/platform';
-import { readLocalFile } from '../../../../util/fs';
-import { getBranchFiles } from '../../../../util/git';
-import { newlineRegex, regEx } from '../../../../util/regex';
+import { logger } from '../../../../logger/index.ts';
+import type { FileOwnerRule, Pr } from '../../../../modules/platform/index.ts';
+import { platform } from '../../../../modules/platform/index.ts';
+import { readLocalFile } from '../../../../util/fs/index.ts';
+import {
+  getBranchFiles,
+  getBranchFilesFromCommit,
+} from '../../../../util/git/index.ts';
+import { newlineRegex, regEx } from '../../../../util/regex.ts';
 
-interface FileOwnerRule {
-  usernames: string[];
-  pattern: string;
-  score: number;
-  match: (path: string) => boolean;
+interface FileOwnersScore {
+  file: string;
+  userScoreMap: Map<string, number>;
 }
 
 function extractOwnersFromLine(line: string): FileOwnerRule {
@@ -22,11 +24,6 @@ function extractOwnersFromLine(line: string): FileOwnerRule {
     score: pattern.length,
     match: (path: string) => matchPattern.ignores(path),
   };
-}
-
-interface FileOwnersScore {
-  file: string;
-  userScoreMap: Map<string, number>;
 }
 
 function matchFileToOwners(
@@ -75,6 +72,18 @@ function getOwnerList(filesWithOwners: FileOwnersScore[]): OwnerFileScore[] {
   }));
 }
 
+function parseCodeOwnersContent(codeOwnersFile: string): string[] {
+  return (
+    codeOwnersFile
+      .split(newlineRegex)
+      // Remove comments
+      .map((line) => line.split('#')[0])
+      // Remove empty lines
+      .map((line) => line.trim())
+      .filter(isNonEmptyString)
+  );
+}
+
 export async function codeOwnersForPr(pr: Pr): Promise<string[]> {
   logger.debug('Searching for CODEOWNERS file');
   try {
@@ -94,7 +103,10 @@ export async function codeOwnersForPr(pr: Pr): Promise<string[]> {
     logger.debug(`Found CODEOWNERS file: ${codeOwnersFile}`);
 
     // Get list of modified files in PR
-    const prFiles = await getBranchFiles(pr.sourceBranch);
+    // if the commit sha is known, we can directly compare against the parent, otherwise use the branch
+    const prFiles = pr.sha
+      ? await getBranchFilesFromCommit(pr.sha)
+      : await getBranchFiles(pr.sourceBranch);
 
     if (!prFiles?.length) {
       logger.debug('PR includes no files');
@@ -102,15 +114,11 @@ export async function codeOwnersForPr(pr: Pr): Promise<string[]> {
     }
 
     // Convert CODEOWNERS file into list of matching rules
-    const fileOwnerRules = codeOwnersFile
-      .split(newlineRegex)
-      // Remove comments
-      .map((line) => line.split('#')[0])
-      // Remove empty lines
-      .map((line) => line.trim())
-      .filter(is.nonEmptyString)
-      // Extract pattern & usernames
-      .map(extractOwnersFromLine);
+    const cleanedLines = parseCodeOwnersContent(codeOwnersFile);
+
+    const fileOwnerRules =
+      platform.extractRulesFromCodeOwnersLines?.(cleanedLines) ??
+      cleanedLines.map(extractOwnersFromLine);
 
     logger.debug(
       { prFiles, fileOwnerRules },

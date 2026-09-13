@@ -1,14 +1,14 @@
 import type {
   RenovateConfig,
   ValidationMessage,
-} from '../../../../config/types';
+} from '../../../../config/types.ts';
 import type {
   LookupUpdate,
   RangeConfig,
-} from '../../../../modules/manager/types';
-import type { SkipReason } from '../../../../types';
-import type { MergeConfidence } from '../../../../util/merge-confidence/types';
-import type { Timestamp } from '../../../../util/timestamp';
+} from '../../../../modules/manager/types.ts';
+import type { SkipReason } from '../../../../types/index.ts';
+import type { MergeConfidence } from '../../../../util/merge-confidence/types.ts';
+import type { Timestamp } from '../../../../util/timestamp.ts';
 
 export interface FilterConfig {
   allowedVersions?: string;
@@ -16,33 +16,37 @@ export interface FilterConfig {
   followTag?: string;
   ignoreDeprecated?: boolean;
   ignoreUnstable?: boolean;
+  maxMajorIncrement?: number;
   respectLatest?: boolean;
   updatePinnedDependencies?: boolean;
-  versioning: string;
+  versioning?: string;
 }
 
 export interface RollbackConfig {
   currentValue?: string;
+  packageName: string;
   depName?: string;
   packageFile?: string;
-  versioning: string;
+  versioning?: string;
+  datasource: string;
 }
 
 export interface LookupUpdateConfig
-  extends RollbackConfig,
-    FilterConfig,
-    RangeConfig,
-    RenovateConfig {
-  separateMinorPatch?: boolean;
+  extends RollbackConfig, FilterConfig, RangeConfig, RenovateConfig {
+  currentVersion?: string;
+
   digestOneAndOnly?: boolean;
-  pinDigests?: boolean;
+  /**
+   * The digest for this dependency is managed externally (for instance in a lockfile) instead of alongside the package file's version,
+   * so Renovate must not pin the digest inline.
+   *
+   * As this is due to the package ecossytem/manager in use, this shouldn't be overridable by `packageRules`
+   */
+  digestManagedExternally?: boolean;
   rollbackPrs?: boolean;
   currentDigest?: string;
   lockedVersion?: string;
   isVulnerabilityAlert?: boolean;
-  separateMajorMinor?: boolean;
-  separateMultipleMajor?: boolean;
-  separateMultipleMinor?: boolean;
   datasource: string;
   packageName: string;
   minimumConfidence?: MergeConfidence | undefined;
@@ -58,11 +62,13 @@ export interface LookupUpdateConfig
 
 export interface UpdateResult {
   sourceDirectory?: string;
+  changelogContent?: string;
   changelogUrl?: string;
   dependencyUrl?: string;
   homepage?: string;
   deprecationMessage?: string;
   sourceUrl?: string | null;
+  currentCompatibility?: string;
   currentVersion?: string;
   isSingleVersion?: boolean;
   lookupName?: string;
@@ -73,7 +79,7 @@ export interface UpdateResult {
   warnings: ValidationMessage[];
   versioning?: string;
   currentVersionAgeInDays?: number;
-  currentVersionTimestamp?: string;
+  currentVersionTimestamp?: Timestamp;
   vulnerabilityFixVersion?: string;
   vulnerabilityFixStrategy?: string;
   mostRecentTimestamp?: Timestamp | null;

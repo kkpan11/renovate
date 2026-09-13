@@ -1,29 +1,30 @@
 import upath from 'upath';
-import { logger } from '../../../logger';
-import { coerceArray } from '../../../util/array';
-import { readLocalFile } from '../../../util/fs';
-import { ensureLocalPath } from '../../../util/fs/util';
-import { extractPackageFile as extractRequirementsFile } from '../pip_requirements/extract';
-import { extractPackageFile as extractSetupPyFile } from '../pip_setup';
+import { logger } from '../../../logger/index.ts';
+import { coerceArray } from '../../../util/array.ts';
+import { readLocalFile } from '../../../util/fs/index.ts';
+import { ensureLocalPath } from '../../../util/fs/util.ts';
+import { extractPackageFile as extractPep621File } from '../pep621/extract.ts';
+import { extractPackageFile as extractRequirementsFile } from '../pip_requirements/extract.ts';
+import { extractPackageFile as extractSetupPyFile } from '../pip_setup/index.ts';
 import type {
   ExtractConfig,
   PackageDependency,
   PackageFile,
   PackageFileContent,
-} from '../types';
-import { extractHeaderCommand, matchManager } from './common';
-import type { DependencyBetweenFiles, PipCompileArgs } from './types';
+} from '../types.ts';
+import { extractHeaderCommand, matchManager } from './common.ts';
+import type { DependencyBetweenFiles, PipCompileArgs } from './types.ts';
 import {
   generateMermaidGraph,
   inferCommandExecDir,
   sortPackageFiles,
-} from './utils';
+} from './utils.ts';
 
-export function extractPackageFile(
+export async function extractPackageFile(
   content: string,
   packageFile: string,
   _config: ExtractConfig,
-): PackageFileContent | null {
+): Promise<PackageFileContent | null> {
   logger.trace('pip-compile.extractPackageFile()');
   const manager = matchManager(packageFile);
   switch (manager) {
@@ -31,6 +32,8 @@ export function extractPackageFile(
       return extractSetupPyFile(content, packageFile, _config);
     case 'pip_requirements':
       return extractRequirementsFile(content);
+    case 'pep621':
+      return await extractPep621File(content, packageFile, _config);
     case 'unknown':
       logger.warn(
         { packageFile },
@@ -81,6 +84,13 @@ export async function extractAllPackageFiles(
         type: 'constraint',
       });
     }
+    for (const override of coerceArray(compileArgs.overridesFiles)) {
+      depsBetweenFiles.push({
+        sourceFile: override,
+        outputFile: matchedFile,
+        type: 'override',
+      });
+    }
     const lockedDeps = extractRequirementsFile(fileContent)?.deps;
     if (!lockedDeps) {
       logger.debug(
@@ -123,7 +133,7 @@ export async function extractAllPackageFiles(
         const existingPackageFile = packageFiles.get(packageFile)!;
         existingPackageFile.lockFiles!.push(matchedFile);
         extendWithIndirectDeps(existingPackageFile, lockedDeps);
-        const source = lockFileSources.get(matchedFile) ?? [];
+        const source = coerceArray(lockFileSources.get(matchedFile));
         source.push(existingPackageFile);
         lockFileSources.set(matchedFile, source);
         continue;
@@ -134,7 +144,7 @@ export async function extractAllPackageFiles(
         continue;
       }
 
-      const packageFileContent = extractPackageFile(
+      const packageFileContent = await extractPackageFile(
         content,
         packageFile,
         config,
@@ -143,7 +153,8 @@ export async function extractAllPackageFiles(
         if (packageFileContent.managerData?.requirementsFiles) {
           packageFileContent.managerData.requirementsFiles =
             packageFileContent.managerData.requirementsFiles.map(
-              (file: string) => upath.normalize(upath.join(compileDir, file)),
+              (file: string) =>
+                upath.normalize(upath.join(upath.dirname(packageFile), file)),
             );
           for (const file of packageFileContent.managerData.requirementsFiles) {
             depsBetweenFiles.push({
@@ -186,7 +197,7 @@ export async function extractAllPackageFiles(
           packageFile,
         };
         packageFiles.set(packageFile, newPackageFile);
-        const source = lockFileSources.get(matchedFile) ?? [];
+        const source = coerceArray(lockFileSources.get(matchedFile));
         source.push(newPackageFile);
         lockFileSources.set(matchedFile, source);
       } else {
@@ -207,7 +218,9 @@ export async function extractAllPackageFiles(
 
   // This needs to go in reverse order to handle transitive dependencies
   for (const packageFile of [...result].reverse()) {
-    for (const reqFile of packageFile.managerData?.requirementsFiles ?? []) {
+    for (const reqFile of coerceArray<string>(
+      packageFile.managerData?.requirementsFiles,
+    )) {
       let sourceFiles: PackageFile[] | undefined = undefined;
       if (matchedFiles.includes(reqFile)) {
         sourceFiles = lockFileSources.get(reqFile);
@@ -235,8 +248,7 @@ export async function extractAllPackageFiles(
     }
   }
   logger.debug(
-    'pip-compile: dependency graph:\n' +
-      generateMermaidGraph(depsBetweenFiles, lockFileArgs),
+    `pip-compile: dependency graph:\n${generateMermaidGraph(depsBetweenFiles, lockFileArgs)}`,
   );
   return result;
 }

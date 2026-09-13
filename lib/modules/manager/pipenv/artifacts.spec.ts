@@ -1,63 +1,75 @@
+import type { Stats } from 'node:fs';
 import * as _fsExtra from 'fs-extra';
-import { join } from 'upath';
+import upath from 'upath';
+import type { MockInstance } from 'vitest';
 import { mockDeep } from 'vitest-mock-extended';
-import { GlobalConfig } from '../../../config/global';
-import type { RepoGlobalConfig } from '../../../config/types';
-import { logger } from '../../../logger';
-import * as docker from '../../../util/exec/docker';
-import type { ExtraEnv, Opt } from '../../../util/exec/types';
-import type { StatusResult } from '../../../util/git/types';
-import { find as _find } from '../../../util/host-rules';
-import * as _datasource from '../../datasource';
-import type { UpdateArtifactsConfig } from '../types';
+import { envMock, mockExecAll } from '~test/exec-util.ts';
+import { Fixtures } from '~test/fixtures.ts';
+import { hostRules } from '~test/host-rules.ts';
+import { env, git, partial } from '~test/util.ts';
+import { GlobalConfig } from '../../../config/global.ts';
+import type {
+  InternalGlobalConfigOptions,
+  RepoGlobalConfig,
+} from '../../../config/types.ts';
+import { logger } from '../../../logger/index.ts';
+import * as docker from '../../../util/exec/docker/index.ts';
+import type { ExtraEnv, Opt } from '../../../util/exec/types.ts';
+import type { StatusResult } from '../../../util/git/types.ts';
+import * as _datasource from '../../datasource/index.ts';
+import type { UpdateArtifactsConfig } from '../types.ts';
 import {
   addExtraEnvVariable,
   extractEnvironmentVariableName,
   getMatchingHostRule,
-} from './artifacts';
-import type { PipfileLock } from './types';
-import { updateArtifacts } from '.';
-import { envMock, mockExecAll } from '~test/exec-util';
-import { Fixtures } from '~test/fixtures';
-import { env, git, partial } from '~test/util';
+} from './artifacts.ts';
+import { updateArtifacts } from './index.ts';
+import type { PipfileLock } from './types.ts';
 
 // mock for cjs require for `@renovatebot/detect-tools`
 // https://github.com/vitest-dev/vitest/discussions/3134
 vi.hoisted(() => {
-  require.cache[require.resolve('fs-extra')] = {
+  const fsExtraModule: Partial<NodeJS.Module> = {
     exports: fixtures.fsExtra(),
-  } as never;
+  };
+  require.cache[require.resolve('fs-extra')] = fsExtraModule as NodeJS.Module;
 });
 vi.mock('fs-extra', () => fixtures.fsExtra());
-vi.mock('../../../util/exec/env', () => mockDeep());
-vi.mock('../../../util/git', () => mockDeep());
-vi.mock('../../../util/host-rules', () => mockDeep());
-vi.mock('../../../util/http', () => mockDeep());
-vi.mock('../../datasource', () => mockDeep());
+vi.mock('../../../util/exec/env.ts');
+vi.mock('../../../util/git/index.ts', () => mockDeep());
+vi.mock('../../../util/http/index.ts', () => mockDeep());
+vi.mock('../../datasource/index.ts', () => mockDeep());
 
 const datasource = vi.mocked(_datasource);
-const find = vi.mocked(_find);
 const fsExtra = vi.mocked(_fsExtra);
+// vi.mocked() resolves stat() to its callback overload, so
+// mockResolvedValueOnce() would expect void; retype via the promise overload
+const statMock = fsExtra.stat as unknown as MockInstance<
+  (path: string) => Promise<Stats>
+>;
 
 process.env.CONTAINERBASE = 'true';
 
-const adminConfig: RepoGlobalConfig = {
+const adminConfig: RepoGlobalConfig & InternalGlobalConfigOptions = {
   // `join` fixes Windows CI
-  localDir: join(join('/tmp/github/some/repo')),
-  cacheDir: join(join('/tmp/renovate/cache')),
-  containerbaseDir: join(join('/tmp/renovate/cache/containerbase')),
+  localDir: upath.join(upath.join('/tmp/github/some/repo')),
+  cacheDir: upath.join(upath.join('/tmp/renovate/cache')),
+  containerbaseDir: upath.join(upath.join('/tmp/renovate/cache/containerbase')),
+  binarySource: 'global',
 };
 const dockerAdminConfig = {
   ...adminConfig,
   binarySource: 'docker',
-  dockerSidecarImage: 'ghcr.io/containerbase/sidecar',
-};
+  dockerSidecarImage: 'ghcr.io/renovatebot/base-image',
+} satisfies RepoGlobalConfig & InternalGlobalConfigOptions;
 
 const config: UpdateArtifactsConfig = {};
 const lockMaintenanceConfig = { ...config, isLockFileMaintenance: true };
-const pipenvCacheDir = join('/tmp/renovate/cache/others/pipenv');
-const pipCacheDir = join('/tmp/renovate/cache/others/pip');
-const virtualenvsCacheDir = join('/tmp/renovate/cache/others/virtualenvs');
+const pipenvCacheDir = upath.join('/tmp/renovate/cache/others/pipenv');
+const pipCacheDir = upath.join('/tmp/renovate/cache/others/pip');
+const virtualenvsCacheDir = upath.join(
+  '/tmp/renovate/cache/others/virtualenvs',
+);
 
 type MockFiles = Record<string, string | string[]>;
 
@@ -115,19 +127,19 @@ describe('modules/manager/pipenv/artifacts', () => {
   });
 
   it('returns if no Pipfile.lock found', async () => {
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: '',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if unchanged', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': JSON.stringify({
@@ -138,20 +150,20 @@ describe('modules/manager/pipenv/artifacts', () => {
     });
     const execSnapshots = mockExecAll();
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
           },
@@ -160,21 +172,27 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('gets python full version from Pipfile', async () => {
     GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile': Fixtures.get('Pipfile1'),
@@ -185,18 +203,18 @@ describe('modules/manager/pipenv/artifacts', () => {
       } satisfies PipfileLock),
     });
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     const execSnapshots = mockExecAll();
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: Fixtures.get('Pipfile1'),
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       { cmd: 'install-tool python 3.6.2' },
@@ -204,7 +222,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
           },
@@ -213,21 +231,21 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
     ]);
   });
 
   it('gets python version from Pipfile', async () => {
     GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile': Fixtures.get('Pipfile2'),
@@ -238,18 +256,18 @@ describe('modules/manager/pipenv/artifacts', () => {
       } satisfies PipfileLock),
     });
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     const execSnapshots = mockExecAll();
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: Fixtures.get('Pipfile2'),
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       { cmd: 'install-tool python 3.6.5' },
@@ -257,7 +275,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
           },
@@ -266,39 +284,39 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
     ]);
   });
 
   it('gets full python version from .python-version', async () => {
     GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': '{}',
       '/.python-version': '3.7.6',
     });
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     const execSnapshots = mockExecAll();
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some toml',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       { cmd: 'install-tool python 3.7.6' },
@@ -306,7 +324,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
           },
@@ -315,24 +333,33 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('gets python stream, from .python-version', async () => {
     GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     mockFiles({
       '/Pipfile.lock': '{}',
@@ -340,14 +367,14 @@ describe('modules/manager/pipenv/artifacts', () => {
     });
     const execSnapshots = mockExecAll();
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some toml',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       { cmd: 'install-tool python 3.8.5' },
@@ -355,7 +382,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
           },
@@ -364,22 +391,31 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('handles no constraint', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': 'unparseable pipfile lock',
@@ -387,20 +423,20 @@ describe('modules/manager/pipenv/artifacts', () => {
 
     const execSnapshots = mockExecAll();
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             PIP_CACHE_DIR: pipCacheDir,
@@ -411,22 +447,31 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('returns updated Pipfile.lock', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': ['current pipfile.lock', 'new pipfile.lock'],
@@ -438,14 +483,14 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config: { ...config, constraints: { python: '== 3.8.*' } },
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           contents: 'new pipfile.lock',
@@ -459,7 +504,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             PIP_CACHE_DIR: pipCacheDir,
@@ -470,20 +515,26 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('supports docker mode', async () => {
     GlobalConfig.set(dockerAdminConfig);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     const pipFileLock = JSON.stringify({
       _meta: { requires: { python_version: '3.7' } },
@@ -492,7 +543,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       '/Pipfile.lock': [pipFileLock, pipFileLock, 'new lock'],
     });
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     // pipenv
     datasource.getPkgReleases.mockResolvedValueOnce({
@@ -505,38 +556,39 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).not.toBeNull();
+    ).resolves.not.toBeNull();
 
     expect(execSnapshots).toMatchObject([
-      { cmd: 'docker pull ghcr.io/containerbase/sidecar' },
+      { cmd: 'docker pull ghcr.io/renovatebot/base-image' },
       { cmd: 'docker ps --filter name=renovate_sidecar -aq' },
       {
         cmd:
           'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
           '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
           '-v "/tmp/renovate/cache":"/tmp/renovate/cache" ' +
+          '-e CI ' +
           '-e PIPENV_CACHE_DIR ' +
           '-e PIP_CACHE_DIR ' +
           '-e WORKON_HOME ' +
           '-e CONTAINERBASE_CACHE_DIR ' +
           '-w "/tmp/github/some/repo" ' +
-          'ghcr.io/containerbase/sidecar' +
-          ' bash -l -c "' +
+          'ghcr.io/renovatebot/base-image' +
+          " bash -l -c '" +
           'install-tool python 3.7.6' +
           ' && ' +
           'install-tool pipenv 2013.6.12' +
           ' && ' +
           'pipenv lock' +
-          '"',
+          "'",
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             PIP_CACHE_DIR: pipCacheDir,
@@ -547,22 +599,31 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('supports install mode', async () => {
     GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     const pipFileLock = JSON.stringify({
       _meta: { requires: { python_version: '3.6' } },
@@ -571,7 +632,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       '/Pipfile.lock': [pipFileLock, 'new lock'],
     });
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     // pipenv
     datasource.getPkgReleases.mockResolvedValueOnce({
@@ -584,14 +645,14 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).not.toBeNull();
+    ).resolves.not.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       { cmd: 'install-tool python 3.6.5' },
@@ -599,7 +660,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             PIP_CACHE_DIR: pipCacheDir,
@@ -610,23 +671,32 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('defaults to latest if no lock constraints', async () => {
     GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
-    fsExtra.stat.mockResolvedValueOnce({} as never);
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     mockFiles({
       '/Pipfile.lock': ['{}', 'new lock'],
@@ -643,14 +713,14 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).not.toBeNull();
+    ).resolves.not.toBeNull();
 
     expect(execSnapshots).toMatchObject([
       { cmd: 'install-tool python 3.10.2' },
@@ -658,7 +728,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             PIP_CACHE_DIR: pipCacheDir,
@@ -669,41 +739,53 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('catches errors', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': 'Current Pipfile.lock',
     });
 
-    fsExtra.outputFile.mockImplementationOnce((() => {
+    fsExtra.outputFile.mockImplementationOnce(() => {
       throw new Error('not found');
-    }) as never);
+    });
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: '{}',
         config,
       }),
-    ).toEqual([
-      { artifactError: { lockFile: 'Pipfile.lock', stderr: 'not found' } },
+    ).resolves.toEqual([
+      { artifactError: { fileName: 'Pipfile.lock', stderr: 'not found' } },
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([]);
@@ -711,8 +793,8 @@ describe('modules/manager/pipenv/artifacts', () => {
   });
 
   it('returns updated Pipenv.lock when doing lockfile maintenance', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
     fsExtra.remove.mockResolvedValue();
 
     mockFiles({
@@ -726,14 +808,14 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: '{}',
         config: lockMaintenanceConfig,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           contents: 'New Pipfile.lock',
@@ -747,7 +829,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             PIP_CACHE_DIR: pipCacheDir,
@@ -759,8 +841,8 @@ describe('modules/manager/pipenv/artifacts', () => {
   });
 
   it('uses pipenv version from Pipfile', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     GlobalConfig.set(dockerAdminConfig);
 
@@ -778,38 +860,39 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).not.toBeNull();
+    ).resolves.not.toBeNull();
 
     expect(execSnapshots).toMatchObject([
-      { cmd: 'docker pull ghcr.io/containerbase/sidecar' },
+      { cmd: 'docker pull ghcr.io/renovatebot/base-image' },
       { cmd: 'docker ps --filter name=renovate_sidecar -aq' },
       {
         cmd:
           'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
           '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
           '-v "/tmp/renovate/cache":"/tmp/renovate/cache" ' +
+          '-e CI ' +
           '-e PIPENV_CACHE_DIR ' +
           '-e PIP_CACHE_DIR ' +
           '-e WORKON_HOME ' +
           '-e CONTAINERBASE_CACHE_DIR ' +
           '-w "/tmp/github/some/repo" ' +
-          'ghcr.io/containerbase/sidecar' +
-          ' bash -l -c "' +
+          'ghcr.io/renovatebot/base-image' +
+          " bash -l -c '" +
           'install-tool python 3.10.2' +
           ' && ' +
           'install-tool pipenv 2020.8.13' +
           ' && ' +
           'pipenv lock' +
-          '"',
+          "'",
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             WORKON_HOME: virtualenvsCacheDir,
@@ -819,25 +902,37 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('uses pipenv version from Pipfile dev packages', async () => {
     GlobalConfig.set(dockerAdminConfig);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     const oldLock = JSON.stringify({
       develop: { pipenv: { version: '==2020.8.13' } },
@@ -853,38 +948,39 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config,
       }),
-    ).not.toBeNull();
+    ).resolves.not.toBeNull();
 
     expect(execSnapshots).toMatchObject([
-      { cmd: 'docker pull ghcr.io/containerbase/sidecar' },
+      { cmd: 'docker pull ghcr.io/renovatebot/base-image' },
       { cmd: 'docker ps --filter name=renovate_sidecar -aq' },
       {
         cmd:
           'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
           '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
           '-v "/tmp/renovate/cache":"/tmp/renovate/cache" ' +
+          '-e CI ' +
           '-e PIPENV_CACHE_DIR ' +
           '-e PIP_CACHE_DIR ' +
           '-e WORKON_HOME ' +
           '-e CONTAINERBASE_CACHE_DIR ' +
           '-w "/tmp/github/some/repo" ' +
-          'ghcr.io/containerbase/sidecar' +
-          ' bash -l -c "' +
+          'ghcr.io/renovatebot/base-image' +
+          " bash -l -c '" +
           'install-tool python 3.10.2' +
           ' && ' +
           'install-tool pipenv 2020.8.13' +
           ' && ' +
           'pipenv lock' +
-          '"',
+          "'",
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             WORKON_HOME: virtualenvsCacheDir,
@@ -894,24 +990,36 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('uses pipenv version from config', async () => {
     GlobalConfig.set(dockerAdminConfig);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
+    statMock.mockResolvedValueOnce(partial<Stats>());
+    fsExtra.ensureDir.mockResolvedValue(undefined);
 
     const oldLock = JSON.stringify({
       default: { pipenv: { version: '==2020.8.13' } },
@@ -927,38 +1035,39 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: 'some new content',
         config: { ...config, constraints: { pipenv: '==2020.1.1' } },
       }),
-    ).not.toBeNull();
+    ).resolves.not.toBeNull();
 
     expect(execSnapshots).toMatchObject([
-      { cmd: 'docker pull ghcr.io/containerbase/sidecar' },
+      { cmd: 'docker pull ghcr.io/renovatebot/base-image' },
       { cmd: 'docker ps --filter name=renovate_sidecar -aq' },
       {
         cmd:
           'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
           '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
           '-v "/tmp/renovate/cache":"/tmp/renovate/cache" ' +
+          '-e CI ' +
           '-e PIPENV_CACHE_DIR ' +
           '-e PIP_CACHE_DIR ' +
           '-e WORKON_HOME ' +
           '-e CONTAINERBASE_CACHE_DIR ' +
           '-w "/tmp/github/some/repo" ' +
-          'ghcr.io/containerbase/sidecar' +
-          ' bash -l -c "' +
+          'ghcr.io/renovatebot/base-image' +
+          " bash -l -c '" +
           'install-tool python 3.10.2' +
           ' && ' +
           'install-tool pipenv 2020.1.1' +
           ' && ' +
           'pipenv lock' +
-          '"',
+          "'",
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             WORKON_HOME: virtualenvsCacheDir,
@@ -968,21 +1077,30 @@ describe('modules/manager/pipenv/artifacts', () => {
     ]);
 
     expect(fsExtra.ensureDir.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pipenv'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/pip'))],
-      [expect.toEndWith(join('/tmp/renovate/cache/others/virtualenvs'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pipenv'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/pip'))],
+      [expect.toEndWith(upath.join('/tmp/renovate/cache/others/virtualenvs'))],
     ]);
     expect(fsExtra.readFile.mock.calls).toEqual([
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/.python-version')), 'utf8'],
-      [expect.toEndWith(join('/tmp/github/some/repo/Pipfile.lock')), 'utf8'],
+      [expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile')), 'utf8'],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/.python-version')),
+        'utf8',
+      ],
+      [
+        expect.toEndWith(upath.join('/tmp/github/some/repo/Pipfile.lock')),
+        'utf8',
+      ],
     ]);
   });
 
   it('passes private credential environment vars', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': ['current Pipfile.lock', 'New Pipfile.lock'],
@@ -995,19 +1113,20 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    find.mockReturnValueOnce({
+    hostRules.add({
+      matchHost: 'mypypi.example.com',
       username: 'usernameOne',
       password: 'passwordTwo',
     });
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: Fixtures.get('Pipfile6'),
         config: { ...config, constraints: { python: '== 3.8.*' } },
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           contents: 'New Pipfile.lock',
@@ -1021,7 +1140,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             WORKON_HOME: virtualenvsCacheDir,
@@ -1054,12 +1173,18 @@ describe('modules/manager/pipenv/artifacts', () => {
       FOO: '1',
     };
     addExtraEnvVariable(extraEnv, 'FOO', '2');
-    expect(logger.warn).toHaveBeenCalledOnce();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        envVar: 'FOO',
+      },
+      'Possible misconfiguration, environment variable already set to a different value',
+    );
   });
 
   it('updates extraEnv if variable names differ from default', async () => {
-    fsExtra.ensureDir.mockResolvedValue(undefined as never);
-    fsExtra.stat.mockResolvedValueOnce({} as never);
+    fsExtra.ensureDir.mockResolvedValue(undefined);
+    statMock.mockResolvedValueOnce(partial<Stats>());
 
     mockFiles({
       '/Pipfile.lock': ['current Pipfile.lock', 'New Pipfile.lock'],
@@ -1072,19 +1197,20 @@ describe('modules/manager/pipenv/artifacts', () => {
       }),
     );
 
-    find.mockReturnValueOnce({
+    hostRules.add({
+      matchHost: 'mypypi.example.com',
       username: 'usernameOne',
       password: 'passwordTwo',
     });
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'Pipfile',
         updatedDeps: [],
         newPackageFileContent: Fixtures.get('Pipfile7'),
         config: { ...config, constraints: { python: '== 3.8.*' } },
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           contents: 'New Pipfile.lock',
@@ -1098,7 +1224,7 @@ describe('modules/manager/pipenv/artifacts', () => {
       {
         cmd: 'pipenv lock',
         options: {
-          cwd: join('/tmp/github/some/repo'),
+          cwd: upath.join('/tmp/github/some/repo'),
           env: {
             PIPENV_CACHE_DIR: pipenvCacheDir,
             WORKON_HOME: virtualenvsCacheDir,

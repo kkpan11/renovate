@@ -1,5 +1,5 @@
-import { parseArchiveUrl } from './http';
-import { extractDepsFromFragmentData } from '.';
+import { parseArchiveUrl } from './http.ts';
+import { extractDepsFromFragmentData } from './index.ts';
 
 describe('modules/manager/bazel/rules/index', () => {
   it('parses archiveUrl', () => {
@@ -92,6 +92,23 @@ describe('modules/manager/bazel/rules/index', () => {
         {
           datasource: 'github-tags',
           depType: 'git_repository',
+          depName: 'foo_bar',
+          packageName: 'foo/bar',
+          currentDigest: 'abcdef0123abcdef0123abcdef0123abcdef0123',
+        },
+      ]);
+
+      expect(
+        extractDepsFromFragmentData({
+          rule: 'new_git_repository',
+          name: 'foo_bar',
+          commit: 'abcdef0123abcdef0123abcdef0123abcdef0123',
+          remote: 'https://github.com/foo/bar',
+        }),
+      ).toEqual([
+        {
+          datasource: 'github-tags',
+          depType: 'new_git_repository',
           depName: 'foo_bar',
           packageName: 'foo/bar',
           currentDigest: 'abcdef0123abcdef0123abcdef0123abcdef0123',

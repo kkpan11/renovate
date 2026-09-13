@@ -1,10 +1,10 @@
 import { codeBlock } from 'common-tags';
 import { describe, expect, it, vi } from 'vitest';
+import { fs } from '~test/util.ts';
+import { getUserPixiConfig } from './extract.ts';
+import { extractPackageFile } from './index.ts';
 
-import { extractPackageFile } from '.';
-import { fs } from '~test/util';
-
-vi.mock('../../../util/fs');
+vi.mock('../../../util/fs/index.ts');
 
 const pyprojectToml = `
 [tool.pixi.project]
@@ -96,6 +96,7 @@ numpy = { version = "*", build = "py312*" }
 [pypi-dependencies]
 requests = '*'
 requests2 = {version = '*'}
+mako = "==1.3.9"
 
 [target.win-64.pypi-dependencies]
 urllib3 = {version = '*'}
@@ -143,30 +144,33 @@ python = "3.12.*"
 describe('modules/manager/pixi/extract', () => {
   describe('extractPackageFile()', () => {
     it('returns null for empty pyproject.toml', async () => {
-      expect(
-        await extractPackageFile('nothing here', 'pyproject.toml'),
-      ).toBeNull();
+      await expect(
+        extractPackageFile('nothing here', 'pyproject.toml'),
+      ).resolves.toBeNull();
     });
 
     it('returns null for empty pixi.toml', async () => {
-      expect(await extractPackageFile('nothing here', 'pixi.toml')).toBeNull();
+      await expect(
+        extractPackageFile('nothing here', 'pixi.toml'),
+      ).resolves.toBeNull();
     });
 
     it('returns null for parsed file without pixi section', async () => {
-      expect(
-        await extractPackageFile(pyprojectWithoutPixi, 'pyproject.toml'),
-      ).toBeNull();
+      await expect(
+        extractPackageFile(pyprojectWithoutPixi, 'pyproject.toml'),
+      ).resolves.toBeNull();
     });
 
     it('returns parse pixi.toml', async () => {
-      expect(await extractPackageFile(pixiToml, 'pixi.toml')).toMatchObject({
+      await expect(
+        extractPackageFile(pixiToml, 'pixi.toml'),
+      ).resolves.toMatchObject({
         deps: [
           {
             channels: ['conda-forge'],
             currentValue: '3.12.*',
             datasource: 'conda',
             depName: 'python',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -175,7 +179,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=2.0,<3',
             datasource: 'conda',
             depName: 'geographiclib',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -184,7 +187,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=2.4.1,<3',
             datasource: 'conda',
             depName: 'geopy',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -193,7 +195,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=0.24.0,<0.25',
             datasource: 'conda',
             depName: 'cartopy',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -202,7 +203,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '2.*',
             datasource: 'conda',
             depName: 'pydantic',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -211,7 +211,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=3.10.0,<4',
             datasource: 'conda',
             depName: 'matplotlib',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -220,7 +219,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=5.15.9,<6',
             datasource: 'conda',
             depName: 'pyqt',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -229,7 +227,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=2.2.3,<3',
             datasource: 'conda',
             depName: 'pandas',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -238,7 +235,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=2.9.0.post0,<3',
             datasource: 'conda',
             depName: 'python-dateutil',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -247,7 +243,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=13.9.4,<14',
             datasource: 'conda',
             depName: 'rich',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -256,7 +251,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=1.15.2,<2',
             datasource: 'conda',
             depName: 'scipy',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -265,7 +259,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=4.67.1,<5',
             datasource: 'conda',
             depName: 'tqdm',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -274,7 +267,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=2025a',
             datasource: 'conda',
             depName: 'tzdata',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -283,7 +275,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '2.*',
             datasource: 'conda',
             depName: 'numpy',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -292,7 +283,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=1.3.0,<2',
             datasource: 'conda',
             depName: 'adjusttext',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -301,7 +291,6 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '>=3.11.1,<4',
             datasource: 'conda',
             depName: 'iris',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -314,15 +303,14 @@ describe('modules/manager/pixi/extract', () => {
       fs.getSiblingFileName.mockReturnValueOnce('pixi.lock');
       fs.localPathExists.mockResolvedValueOnce(true);
 
-      expect(
-        await extractPackageFile(pyprojectToml, 'pyproject.toml'),
-      ).toMatchObject({
+      await expect(
+        extractPackageFile(pyprojectToml, 'pyproject.toml'),
+      ).resolves.toMatchObject({
         deps: [
           {
             currentValue: '*',
             datasource: 'pypi',
             depName: 'requests',
-            depType: 'pypi-dependencies',
             versioning: 'pep440',
           },
         ],
@@ -334,15 +322,14 @@ describe('modules/manager/pixi/extract', () => {
       fs.getSiblingFileName.mockReturnValueOnce('pixi.lock');
       fs.localPathExists.mockReturnValueOnce(Promise.resolve(false));
 
-      expect(
-        await extractPackageFile(pyprojectToml, 'pyproject.toml'),
-      ).toMatchObject({
+      await expect(
+        extractPackageFile(pyprojectToml, 'pyproject.toml'),
+      ).resolves.toMatchObject({
         deps: [
           {
             currentValue: '*',
             datasource: 'pypi',
             depName: 'requests',
-            depType: 'pypi-dependencies',
             versioning: 'pep440',
           },
         ],
@@ -354,17 +341,15 @@ describe('modules/manager/pixi/extract', () => {
       fs.getSiblingFileName.mockReturnValueOnce('pixi.lock');
       fs.localPathExists.mockReturnValueOnce(Promise.resolve(false));
 
-      expect(
-        await extractPackageFile(fullPixiConfig, 'pixi.toml'),
-      ).toMatchObject({
+      await expect(
+        extractPackageFile(fullPixiConfig, 'pixi.toml'),
+      ).resolves.toMatchObject({
         deps: [
           {
-            channel: undefined,
             channels: ['conda-forge', 'conda-not-forge'],
             currentValue: '==3.12',
             datasource: 'conda',
             depName: 'python',
-            depType: 'dependencies',
             registryUrls: [
               'https://api.anaconda.org/package/conda-forge/',
               'https://api.anaconda.org/package/conda-not-forge/',
@@ -372,12 +357,10 @@ describe('modules/manager/pixi/extract', () => {
             versioning: 'conda',
           },
           {
-            channel: undefined,
             channels: ['conda-forge', 'conda-not-forge'],
             currentValue: '*',
             datasource: 'conda',
             depName: 'numpy',
-            depType: 'dependencies',
             registryUrls: [
               'https://api.anaconda.org/package/conda-forge/',
               'https://api.anaconda.org/package/conda-not-forge/',
@@ -390,19 +373,18 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '==1.15.1',
             datasource: 'conda',
             depName: 'scipy',
-            depType: 'dependencies',
+            depType: 'feature-scipy',
             registryUrls: [
               'https://api.anaconda.org/package/channel of scipy/',
             ],
             versioning: 'conda',
           },
           {
-            channel: undefined,
             channels: ['cuda', 'anaconda', 'conda-forge', 'conda-not-forge'],
             currentValue: '==3.10.0',
             datasource: 'conda',
             depName: 'matplotlib',
-            depType: 'dependencies',
+            depType: 'feature-scipy',
             registryUrls: [
               'https://api.anaconda.org/package/cuda/',
               'https://api.anaconda.org/package/anaconda/',
@@ -412,12 +394,11 @@ describe('modules/manager/pixi/extract', () => {
             versioning: 'conda',
           },
           {
-            channel: undefined,
             channels: ['conda-forge', 'conda-not-forge'],
             currentValue: '==0.9.7',
             datasource: 'conda',
             depName: 'ruff',
-            depType: 'dependencies',
+            depType: 'feature-lint',
             registryUrls: [
               'https://api.anaconda.org/package/conda-forge/',
               'https://api.anaconda.org/package/conda-not-forge/',
@@ -428,49 +409,53 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '*',
             datasource: 'pypi',
             depName: 'requests',
-            depType: 'pypi-dependencies',
             versioning: 'pep440',
           },
           {
             currentValue: '*',
             datasource: 'pypi',
             depName: 'requests2',
-            depType: 'pypi-dependencies',
+            versioning: 'pep440',
+          },
+          {
+            currentValue: '==1.3.9',
+            currentVersion: '1.3.9',
+            datasource: 'pypi',
+            depName: 'mako',
             versioning: 'pep440',
           },
           {
             currentValue: '*',
             datasource: 'pypi',
             depName: 'urllib3',
-            depType: 'pypi-dependencies',
             versioning: 'pep440',
           },
           {
             currentValue: '*',
             datasource: 'pypi',
             depName: 'flake8',
-            depType: 'pypi-dependencies',
+            depType: 'feature-lint',
             versioning: 'pep440',
           },
           {
             currentValue: '==25.*',
             datasource: 'pypi',
             depName: 'black',
-            depType: 'pypi-dependencies',
+            depType: 'feature-lint',
             versioning: 'pep440',
           },
           {
             currentValue: '>0',
             datasource: 'pypi',
             depName: 'black',
-            depType: 'pypi-dependencies',
+            depType: 'feature-test',
             versioning: 'pep440',
           },
           {
             currentValue: undefined,
             datasource: 'git-refs',
             depName: 'pytest',
-            depType: 'pypi-dependencies',
+            depType: 'feature-test',
             packageName: 'https://github.com/pytest-dev/pytest.git',
             skipReason: 'unspecified-version',
             skipStage: 'extract',
@@ -480,7 +465,7 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: '0106aced5faa299e6ede89d1230bd6784f2c3660',
             datasource: 'git-refs',
             depName: 'requests',
-            depType: 'pypi-dependencies',
+            depType: 'feature-test',
             packageName: 'https://github.com/psf/requests.git',
             versioning: 'git',
           },
@@ -488,7 +473,7 @@ describe('modules/manager/pixi/extract', () => {
             currentValue: 'v0.3.0',
             datasource: 'git-refs',
             depName: 'pytest-github-actions-annotate-failures',
-            depType: 'pypi-dependencies',
+            depType: 'feature-test',
             packageName:
               'https://github.com/pytest-dev/pytest-github-actions-annotate-failures.git',
             versioning: 'git',
@@ -499,8 +484,8 @@ describe('modules/manager/pixi/extract', () => {
     });
 
     it('returns parse non-known config file as pyproject.toml', async () => {
-      expect(
-        await extractPackageFile(
+      await expect(
+        extractPackageFile(
           codeBlock`
           [tool.pixi.project]
           channels = ['conda-forge']
@@ -511,14 +496,13 @@ describe('modules/manager/pixi/extract', () => {
           `,
           'not-sure-what-file-this-is.toml',
         ),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         deps: [
           {
             channels: ['conda-forge'],
             currentValue: '*',
             datasource: 'conda',
             depName: 'requests',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -528,8 +512,8 @@ describe('modules/manager/pixi/extract', () => {
     });
 
     it('returns parse non-known config file as pixi.toml', async () => {
-      expect(
-        await extractPackageFile(
+      await expect(
+        extractPackageFile(
           codeBlock`
         [project]
         channels = ['conda-forge']
@@ -540,14 +524,13 @@ describe('modules/manager/pixi/extract', () => {
         `,
           'not-sure-what-file-this-is.toml',
         ),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         deps: [
           {
             channels: ['conda-forge'],
             currentValue: '*',
             datasource: 'conda',
             depName: 'requests',
-            depType: 'dependencies',
             registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
             versioning: 'conda',
           },
@@ -578,12 +561,10 @@ describe('modules/manager/pixi/extract', () => {
     ).resolves.toMatchObject({
       deps: [
         {
-          channel: undefined,
           channels: ['https://prefix.dev/conda-forge'],
           currentValue: '==1.15.1',
           datasource: 'conda',
           depName: 'scipy',
-          depType: 'dependencies',
           registryUrls: ['https://prefix.dev/conda-forge/'],
           versioning: 'conda',
         },
@@ -613,7 +594,6 @@ describe('modules/manager/pixi/extract', () => {
         {
           datasource: 'conda',
           depName: 'scipy',
-          depType: 'dependencies',
           skipReason: 'unknown-registry',
           skipStage: 'extract',
           versioning: 'conda',
@@ -644,7 +624,6 @@ describe('modules/manager/pixi/extract', () => {
           currentValue: '==1.15.1',
           datasource: 'conda',
           depName: 'scipy',
-          depType: 'dependencies',
           registryUrls: ['https://api.anaconda.org/package/conda-forge/'],
           versioning: 'conda',
         },
@@ -653,7 +632,7 @@ describe('modules/manager/pixi/extract', () => {
     });
   });
 
-  it(`extract package with channel priority`, async () => {
+  it(`extract package with channel options`, async () => {
     const result = await extractPackageFile(
       codeBlock`
         [project]
@@ -664,7 +643,12 @@ describe('modules/manager/pixi/extract', () => {
         version = "0.1.0"
 
         [feature.scipy]
-        channels = ["anaconda", {channel = 'cuda', priority = 1},  {channel = 'cuda2', priority = 1}]
+        channels = [
+          "anaconda",
+          { channel = "community", exclude-newer = "7d" },
+          { channel = "cuda", priority = 1 },
+          { channel = "cuda2", priority = 1 },
+        ]
         dependencies = { scipy = "==1.15.1" }
 
         [feature.numpy]
@@ -679,11 +663,11 @@ describe('modules/manager/pixi/extract', () => {
           currentValue: '==1.15.1',
           datasource: 'conda',
           depName: 'scipy',
-          depType: 'dependencies',
           registryUrls: [
             'https://api.anaconda.org/package/cuda/',
             'https://api.anaconda.org/package/cuda2/',
             'https://api.anaconda.org/package/anaconda/',
+            'https://api.anaconda.org/package/community/',
             'https://api.anaconda.org/package/conda-forge/',
             'https://api.anaconda.org/package/conda-not-forge/',
           ],
@@ -693,7 +677,7 @@ describe('modules/manager/pixi/extract', () => {
           currentValue: '==1.15.1',
           datasource: 'conda',
           depName: 'numpy',
-          depType: 'dependencies',
+          depType: 'feature-numpy',
           registryUrls: [
             'https://api.anaconda.org/package/conda-forge/',
             'https://api.anaconda.org/package/conda-not-forge/',
@@ -705,22 +689,40 @@ describe('modules/manager/pixi/extract', () => {
     });
   });
 
+  it('parses optional channel configuration', () => {
+    expect(
+      getUserPixiConfig(
+        codeBlock`
+          [project]
+          channels = [
+            { channel = "conda-forge", exclude-newer = "7d" },
+            { channel = "cuda", priority = 1 },
+          ]
+        `,
+        'pixi.toml',
+      )?.project.channels,
+    ).toEqual([
+      { channel: 'conda-forge', 'exclude-newer': '7d' },
+      { channel: 'cuda', priority: 1 },
+    ]);
+  });
+
   it('returns null for non-known config file', async () => {
-    expect(await extractPackageFile(`{}`, 'unexpected.json')).toBe(null);
+    await expect(extractPackageFile(`{}`, 'unexpected.json')).resolves.toBe(
+      null,
+    );
   });
 
   it(`set registryStrategy='merge' for channel-priority='disabled'"`, async () => {
-    expect(
-      await extractPackageFile(pixiChannelPriorityDisabled, 'pixi.toml'),
-    ).toMatchObject({
+    await expect(
+      extractPackageFile(pixiChannelPriorityDisabled, 'pixi.toml'),
+    ).resolves.toMatchObject({
       deps: [
         {
-          channel: undefined,
           channels: ['anaconda', 'conda-forge'],
           currentValue: '3.12.*',
           datasource: 'conda',
           depName: 'python',
-          depType: 'dependencies',
           registryStrategy: 'merge',
           registryUrls: [
             'https://api.anaconda.org/package/anaconda/',
@@ -733,8 +735,8 @@ describe('modules/manager/pixi/extract', () => {
     });
   });
   it(`use default registryStrategy for channel-priority='strict'"`, async () => {
-    expect(
-      await extractPackageFile(
+    await expect(
+      extractPackageFile(
         codeBlock`
         [project]
         channels = ["anaconda", "conda-forge"]
@@ -745,16 +747,14 @@ describe('modules/manager/pixi/extract', () => {
         `,
         'pixi.toml',
       ),
-    ).toMatchObject({
+    ).resolves.toMatchObject({
       deps: [
         {
-          channel: undefined,
           channels: ['anaconda', 'conda-forge'],
           currentValue: '3.12.*',
           datasource: 'conda',
           depName: 'python',
-          depType: 'dependencies',
-          registryStrategy: undefined,
+
           registryUrls: [
             'https://api.anaconda.org/package/anaconda/',
             'https://api.anaconda.org/package/conda-forge/',

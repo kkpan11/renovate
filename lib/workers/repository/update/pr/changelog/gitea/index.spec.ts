@@ -1,18 +1,17 @@
-import { getChangeLogJSON } from '..';
-import * as semverVersioning from '../../../../../../modules/versioning/semver';
-import * as hostRules from '../../../../../../util/host-rules';
-import { toBase64 } from '../../../../../../util/string';
-import type { Timestamp } from '../../../../../../util/timestamp';
-import type { BranchUpgradeConfig } from '../../../../../types';
-import { GiteaChangeLogSource } from '../gitea/source';
-import { getReleaseNotesMd } from '.';
-import * as httpMock from '~test/http-mock';
-import { partial } from '~test/util';
+import * as httpMock from '~test/http-mock.ts';
+import { partial } from '~test/util.ts';
+import * as semverVersioning from '../../../../../../modules/versioning/semver/index.ts';
+import * as hostRules from '../../../../../../util/host-rules.ts';
+import { toBase64 } from '../../../../../../util/string.ts';
+import type { Timestamp } from '../../../../../../util/timestamp.ts';
+import type { BranchUpgradeConfig } from '../../../../../types.ts';
+import { GiteaChangeLogSource } from '../gitea/source.ts';
+import { getChangeLogJSON } from '../index.ts';
+import { getReleaseNotesMd } from './index.ts';
 
 const upgrade = partial<BranchUpgradeConfig>({
   manager: 'some-manager',
   branchName: '',
-  endpoint: 'https://gitea.com/api/v1/',
   packageName: 'renovate',
   versioning: semverVersioning.id,
   currentVersion: '5.2.0',
@@ -41,7 +40,7 @@ const changelogSource = new GiteaChangeLogSource();
 describe('workers/repository/update/pr/changelog/gitea/index', () => {
   beforeAll(() => {
     // TODO: why?
-    delete process.env.GITHUB_ENDPOINT;
+    vi.stubEnv('GITHUB_ENDPOINT', undefined);
   });
 
   describe('getChangeLogJSON', () => {
@@ -55,39 +54,39 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
     });
 
     it('returns null if @types', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           currentVersion: undefined,
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('returns null if currentVersion equals newVersion', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           currentVersion: '1.0.0',
           newVersion: '1.0.0',
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('skips invalid repos', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://gitea.com/help',
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('works without gitea', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl: 'https://gitea.com/api/v1/',
@@ -188,11 +187,11 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
             published_at: '2023-07-27T06:19:02Z',
           },
         ]);
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: true,
         project: {
           apiBaseUrl: 'https://gitea.com/api/v1/',
@@ -233,11 +232,11 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
         .get('/api/v1/repos/meno/dropzone/releases?draft=false')
         .times(4)
         .reply(200, []);
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl: 'https://gitea.com/api/v1/',
@@ -268,11 +267,11 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
         .get('/api/v1/repos/meno/dropzone/releases?draft=false')
         .times(4)
         .reply(200, []);
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl: 'https://gitea.com/api/v1/',
@@ -293,39 +292,39 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
     });
 
     it('handles no sourceUrl', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           sourceUrl: undefined,
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('handles invalid sourceUrl', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'http://example.com',
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('handles no releases', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           releases: [],
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('handles not enough releases', async () => {
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           releases: [{ version: '0.9.0' }],
         }),
-      ).toBeNull();
+      ).resolves.toBeNull();
     });
 
     it('supports gitea enterprise and gitea enterprise changelog', async () => {
@@ -334,13 +333,12 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
         matchHost: 'https://gitea-enterprise.example.com/',
         token: 'abc',
       });
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://gitea-enterprise.example.com/meno/dropzone/',
-          endpoint: 'https://gitea-enterprise.example.com/',
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl: 'https://gitea-enterprise.example.com/api/v1/',
@@ -370,14 +368,12 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
         matchHost: 'https://git.test.com/',
         token: 'abc',
       });
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
-          platform: 'gitea',
           sourceUrl: 'https://git.test.com/meno/dropzone/',
-          endpoint: 'https://git.test.com/api/v1/',
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl: 'https://git.test.com/api/v1/',
@@ -422,9 +418,9 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
           { name: 'v5.4.0' },
           { name: 'v5.5.0' },
         ]);
-      expect(
-        await changelogSource.getAllTags('https://git.test.com/', 'some/repo'),
-      ).toEqual([]);
+      await expect(
+        changelogSource.getAllTags('https://git.test.com/', 'some/repo'),
+      ).resolves.toEqual([]);
     });
   });
 
@@ -460,13 +456,13 @@ describe('workers/repository/update/pr/changelog/gitea/index', () => {
           type: 'file',
           content: toBase64('some content'),
         });
-      expect(
-        await getReleaseNotesMd(
+      await expect(
+        getReleaseNotesMd(
           'some/repo',
           'https://git.test.com/api/v1/',
           'charts/some',
         ),
-      ).toEqual({
+      ).resolves.toEqual({
         changelogFile: 'charts/some/CHANGELOG.md',
         changelogMd: 'some content\n#\n##',
       });

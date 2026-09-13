@@ -1,6 +1,6 @@
-import { isScheduledNow } from '../../../workers/repository/update/branch/schedule';
-import type { RenovateConfig } from '../../types';
-import { presets } from './schedule';
+import { isScheduledNow } from '../../../workers/repository/update/branch/schedule.ts';
+import type { RenovateConfig } from '../../types.ts';
+import { presets } from './schedule.preset.ts';
 
 describe('config/presets/internal/schedule', () => {
   let config: RenovateConfig;
@@ -77,6 +77,36 @@ describe('config/presets/internal/schedule', () => {
       ${'2017-06-03T09:50:00.000'} | ${true}
     `('$datetime', ({ datetime, expected }) => {
       config.schedule = presets.nonOfficeHours.schedule;
+      vi.setSystemTime(new Date(datetime));
+      expect(isScheduledNow(config)).toBe(expected);
+    });
+  });
+
+  describe('officeHours', () => {
+    it.each`
+      datetime                     | expected
+      ${'2017-06-01T07:50:00.000'} | ${false}
+      ${'2017-06-01T08:10:00.000'} | ${true}
+      ${'2017-06-01T12:00:00.000'} | ${true}
+      ${'2017-06-01T17:50:00.000'} | ${true}
+      ${'2017-06-01T18:10:00.000'} | ${false}
+      ${'2017-06-02T07:50:00.000'} | ${false}
+      ${'2017-06-02T08:10:00.000'} | ${true}
+      ${'2017-06-02T12:00:00.000'} | ${true}
+      ${'2017-06-02T17:50:00.000'} | ${true}
+      ${'2017-06-02T18:10:00.000'} | ${false}
+      ${'2017-06-03T07:50:00.000'} | ${false}
+      ${'2017-06-03T08:10:00.000'} | ${false}
+      ${'2017-06-03T12:00:00.000'} | ${false}
+      ${'2017-06-03T17:50:00.000'} | ${false}
+      ${'2017-06-03T18:10:00.000'} | ${false}
+      ${'2017-06-04T07:50:00.000'} | ${false}
+      ${'2017-06-04T08:10:00.000'} | ${false}
+      ${'2017-06-04T12:00:00.000'} | ${false}
+      ${'2017-06-04T17:50:00.000'} | ${false}
+      ${'2017-06-04T18:10:00.000'} | ${false}
+    `('$datetime', ({ datetime, expected }) => {
+      config.schedule = presets.officeHours.schedule;
       vi.setSystemTime(new Date(datetime));
       expect(isScheduledNow(config)).toBe(expected);
     });

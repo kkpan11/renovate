@@ -1,18 +1,19 @@
-import is from '@sindresorhus/is';
+import { isArray, isNonEmptyString, isString } from '@sindresorhus/is';
 import { DateTime } from 'luxon';
 import { markdownTable } from 'markdown-table';
 import semver from 'semver';
-import { mergeChildConfig } from '../../../config';
-import { CONFIG_SECRETS_EXPOSED } from '../../../constants/error-messages';
-import { logger } from '../../../logger';
-import { newlineRegex, regEx } from '../../../util/regex';
-import { sanitize } from '../../../util/sanitize';
-import { safeStringify } from '../../../util/stringify';
-import * as template from '../../../util/template';
-import type { Timestamp } from '../../../util/timestamp';
-import { uniq } from '../../../util/uniq';
-import type { BranchConfig, BranchUpgradeConfig } from '../../types';
-import { CommitMessage } from '../model/commit-message';
+import { mergeChildConfig } from '../../../config/index.ts';
+import { CONFIG_SECRETS_EXPOSED } from '../../../constants/error-messages.ts';
+import { logger } from '../../../logger/index.ts';
+import { coerceArray } from '../../../util/array.ts';
+import { newlineRegex, regEx } from '../../../util/regex.ts';
+import { sanitize } from '../../../util/sanitize.ts';
+import { safeStringify } from '../../../util/stringify.ts';
+import * as template from '../../../util/template/index.ts';
+import type { Timestamp } from '../../../util/timestamp.ts';
+import { uniq } from '../../../util/uniq.ts';
+import type { BranchConfig, BranchUpgradeConfig } from '../../types.ts';
+import { CommitMessage } from '../model/commit-message.ts';
 
 function prettifyVersion(version: string): string {
   if (regEx(/^\d/).test(version)) {
@@ -26,14 +27,17 @@ function isTypesGroup(branchUpgrades: BranchUpgradeConfig[]): boolean {
   return (
     branchUpgrades.some(({ depName }) => depName?.startsWith('@types/')) &&
     new Set(
-      branchUpgrades.map(({ depName }) => depName?.replace(/^@types\//, '')),
+      branchUpgrades.map(({ depName }) =>
+        depName?.replace(regEx(/^@types\//), ''),
+      ),
     ).size === 1
   );
 }
 
 function sortTypesGroup(upgrades: BranchUpgradeConfig[]): void {
-  const isTypesUpgrade = ({ depName }: BranchUpgradeConfig): boolean =>
-    !!depName?.startsWith('@types/');
+  function isTypesUpgrade({ depName }: BranchUpgradeConfig): boolean {
+    return !!depName?.startsWith('@types/');
+  }
   const regularUpgrades = upgrades.filter(
     (upgrade) => !isTypesUpgrade(upgrade),
   );
@@ -99,8 +103,8 @@ function compileCommitMessage(upgrade: BranchUpgradeConfig): string {
   upgrade.commitMessage = upgrade.commitMessage.trim(); // Trim exterior whitespace
   upgrade.commitMessage = upgrade.commitMessage.replace(regEx(/\s+/g), ' '); // Trim extra whitespace inside string
   upgrade.commitMessage = upgrade.commitMessage.replace(
-    regEx(/to vv(\d)/),
-    'to v$1',
+    regEx(/to vv(?<digit>\d)/),
+    'to v$<digit>',
   );
   if (upgrade.toLowerCase && upgrade.commitMessageLowerCase !== 'never') {
     // We only need to lowercase the first line
@@ -109,7 +113,7 @@ function compileCommitMessage(upgrade: BranchUpgradeConfig): string {
     upgrade.commitMessage = splitMessage.join('\n');
   }
 
-  logger.trace(`commitMessage: ` + JSON.stringify(upgrade.commitMessage));
+  logger.trace(`commitMessage: ${JSON.stringify(upgrade.commitMessage)}`);
   return upgrade.commitMessage;
 }
 
@@ -141,23 +145,50 @@ function compilePrTitle(
   if (!upgrade.prTitleStrict) {
     upgrade.prTitle += upgrade.hasBaseBranches ? ' ({{baseBranch}})' : '';
     if (upgrade.isGroup) {
-      upgrade.prTitle +=
-        upgrade.updateType === 'major' && upgrade.separateMajorMinor
-          ? ' (major)'
-          : '';
-      upgrade.prTitle +=
-        upgrade.updateType === 'minor' && upgrade.separateMinorPatch
-          ? ' (minor)'
-          : '';
-      upgrade.prTitle +=
-        upgrade.updateType === 'patch' && upgrade.separateMinorPatch
-          ? ' (patch)'
-          : '';
+      const hasVersionInTitle = !!semver.coerce(
+        template.compile(upgrade.commitMessageExtra ?? '', upgrade),
+      );
+      if (!hasVersionInTitle) {
+        upgrade.prTitle +=
+          upgrade.updateType === 'major' && upgrade.separateMajorMinor
+            ? ' (major)'
+            : '';
+        upgrade.prTitle +=
+          upgrade.updateType === 'minor' && upgrade.separateMinorPatch
+            ? ' (minor)'
+            : '';
+        upgrade.prTitle +=
+          upgrade.updateType === 'patch' && upgrade.separateMinorPatch
+            ? ' (patch)'
+            : '';
+      }
     }
   }
   // Compile again to allow for nested templates
   upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
-  logger.trace(`prTitle: ` + JSON.stringify(upgrade.prTitle));
+  logger.trace(`prTitle: ${JSON.stringify(upgrade.prTitle)}`);
+}
+
+function getMinimumGroupSize(upgrades: BranchUpgradeConfig[]): number {
+  let minimumGroupSize = 1;
+  const groupSizes = new Set<number>();
+
+  for (const upg of upgrades) {
+    if (upg.minimumGroupSize) {
+      groupSizes.add(upg.minimumGroupSize);
+      if (minimumGroupSize < upg.minimumGroupSize) {
+        minimumGroupSize = upg.minimumGroupSize;
+      }
+    }
+  }
+
+  if (groupSizes.size > 1) {
+    logger.debug(
+      'Multiple minimumGroupSize values found for this branch, using highest.',
+    );
+  }
+
+  return minimumGroupSize;
 }
 
 // Sorted by priority, from low to high
@@ -169,6 +200,10 @@ export function generateBranchConfig(
   let branchUpgrades = upgrades;
   if (!branchUpgrades.every((upgrade) => upgrade.pendingChecks)) {
     // If the branch isn't pending, then remove any upgrades within which *are*
+    logger.debug(
+      { branch: branchUpgrades[0].branchName },
+      'Branch is not pending, removing pending upgrades',
+    );
     branchUpgrades = branchUpgrades.filter((upgrade) => !upgrade.pendingChecks);
   }
   logger.trace({ config: branchUpgrades }, 'generateBranchConfig');
@@ -244,7 +279,13 @@ export function generateBranchConfig(
   const typesGroup =
     depNames.length > 1 && !hasGroupName && isTypesGroup(branchUpgrades);
   logger.trace(`groupEligible: ${groupEligible}`);
-  const useGroupSettings = hasGroupName && groupEligible;
+  const singleUpdateGroup =
+    hasGroupName && !groupEligible && !branchUpgrades[0].sharedVariableName;
+  logger.trace(`singleUpdateGroup: ${singleUpdateGroup}`);
+  const useGroupSettings =
+    hasGroupName &&
+    (groupEligible ||
+      (singleUpdateGroup && branchUpgrades[0].groupSingleUpdates === true));
   logger.trace(`useGroupSettings: ${useGroupSettings}`);
   let releaseTimestamp: Timestamp;
 
@@ -264,9 +305,7 @@ export function generateBranchConfig(
 
     const pendingVersionsLength = upgrade.pendingVersions?.length;
     if (pendingVersionsLength) {
-      upgrade.displayPending = `\`${upgrade
-        .pendingVersions!.slice(-1)
-        .pop()!}\``;
+      upgrade.displayPending = `\`${upgrade.pendingVersions!.at(-1)!}\``;
       if (pendingVersionsLength > 1) {
         upgrade.displayPending += ` (+${pendingVersionsLength - 1})`;
       }
@@ -279,6 +318,12 @@ export function generateBranchConfig(
       // Now overwrite original config with group config
       upgrade = mergeChildConfig(upgrade, upgrade.group);
       upgrade.isGroup = true;
+      if (singleUpdateGroup) {
+        // Single update using group name instead of dependency name,
+        // so remove version from commit message.
+        delete upgrade.commitMessageExtra;
+        upgrade.recreateClosed = upgrade.recreateWhen !== 'never';
+      }
     } else {
       delete upgrade.groupName;
     }
@@ -400,7 +445,7 @@ export function generateBranchConfig(
         [],
       ),
     ),
-  ].filter(is.nonEmptyString);
+  ].filter(isNonEmptyString);
   // combine excludeCommitPaths for multiple manager experience
   const hasExcludeCommitPaths = config.upgrades.some(
     (u) => u.excludeCommitPaths && u.excludeCommitPaths.length > 0,
@@ -424,14 +469,14 @@ export function generateBranchConfig(
   config.labels = [
     ...new Set(
       config.upgrades
-        .map((upgrade) => upgrade.labels ?? [])
+        .map((upgrade) => coerceArray(upgrade.labels))
         .reduce((a, b) => a.concat(b), []),
     ),
   ];
   config.addLabels = [
     ...new Set(
       config.upgrades
-        .map((upgrade) => upgrade.addLabels ?? [])
+        .map((upgrade) => coerceArray(upgrade.addLabels))
         .reduce((a, b) => a.concat(b), []),
     ),
   ];
@@ -445,10 +490,9 @@ export function generateBranchConfig(
   // explicit set `isLockFileMaintenance` for the branch for groups
   if (config.upgrades.some((upgrade) => upgrade.isLockFileMaintenance)) {
     config.isLockFileMaintenance = true;
-    // istanbul ignore if: not worth testing
+    // istanbul ignore if: should never happen
     if (config.upgrades.some((upgrade) => !upgrade.isLockFileMaintenance)) {
-      // TODO: warn?
-      logger.debug(
+      logger.warn(
         'Grouping lockfile maintenance with other update types is not supported',
       );
     }
@@ -461,14 +505,34 @@ export function generateBranchConfig(
     }
   }
 
+  config.minimumGroupSize = getMinimumGroupSize(config.upgrades);
   // Set skipInstalls to false if any upgrade in the branch has it false
   config.skipInstalls = config.upgrades.every(
     (upgrade) => upgrade.skipInstalls !== false,
   );
 
+  // Artifact updating will only be skipped if every upgrade wants to skip it.
+  config.skipArtifactsUpdate = config.upgrades.every(
+    (upgrade) => upgrade.skipArtifactsUpdate,
+  );
+  if (
+    !config.skipArtifactsUpdate &&
+    config.upgrades.some((upgrade) => upgrade.skipArtifactsUpdate)
+  ) {
+    logger.debug(
+      {
+        upgrades: config.upgrades.map((upgrade) => ({
+          depName: upgrade.depName,
+          skipArtifactsUpdate: upgrade.skipArtifactsUpdate,
+        })),
+      },
+      'Mixed `skipArtifactsUpdate` values in upgrades. Artifacts will be updated.',
+    );
+  }
+
   const tableRows = config.upgrades
     .map(getTableValues)
-    .filter((x): x is string[] => is.array(x, is.string));
+    .filter((x): x is string[] => isArray(x, isString));
 
   if (tableRows.length) {
     const table: string[][] = [];
@@ -484,13 +548,13 @@ export function generateBranchConfig(
       seenRows.add(key);
       table.push(row);
     }
-    config.commitMessage += '\n\n' + markdownTable(table) + '\n';
+    config.commitMessage += `\n\n${markdownTable(table)}\n`;
   }
   const additionalReviewers = uniq(
     config.upgrades
       .map((upgrade) => upgrade.additionalReviewers)
       .flat()
-      .filter(is.nonEmptyString),
+      .filter(isNonEmptyString),
   );
   if (additionalReviewers.length > 0) {
     config.additionalReviewers = additionalReviewers;

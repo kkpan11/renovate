@@ -1,17 +1,17 @@
 import upath from 'upath';
-import type { XmlElement } from 'xmldoc';
+import type { XmlElement, XmlNodeBase } from 'xmldoc';
 import { XmlDocument } from 'xmldoc';
-import { logger } from '../../../logger';
+import { logger } from '../../../logger/index.ts';
 import {
   findLocalSiblingOrParent,
   findUpLocal,
   readLocalFile,
-} from '../../../util/fs';
-import { minimatch } from '../../../util/minimatch';
-import { regEx } from '../../../util/regex';
-import { nugetOrg } from '../../datasource/nuget';
-import { GlobalJson } from './schema';
-import type { NugetPackageDependency, Registry } from './types';
+} from '../../../util/fs/index.ts';
+import { minimatch } from '../../../util/minimatch.ts';
+import { regEx } from '../../../util/regex.ts';
+import { nugetOrg } from '../../datasource/nuget/index.ts';
+import { GlobalJson } from './schema.ts';
+import type { NugetPackageDependency, Registry } from './types.ts';
 
 export async function readFileAsXmlDocument(
   file: string,
@@ -82,7 +82,7 @@ export async function getConfiguredRegistries(
   }
 
   for (const child of packageSources.children) {
-    if (child.type === 'element') {
+    if (isXmlElement(child)) {
       if (child.name === 'clear') {
         logger.debug(`clearing registry URLs`);
         registries.length = 0;
@@ -130,7 +130,7 @@ export async function getConfiguredRegistries(
   if (disabledPackageSources) {
     for (const child of disabledPackageSources.children) {
       if (
-        child.type === 'element' &&
+        isXmlElement(child) &&
         child.name === 'add' &&
         child.attr.value === 'true'
       ) {
@@ -154,6 +154,10 @@ export async function getConfiguredRegistries(
   });
 
   return registries;
+}
+
+export function isXmlElement(child: XmlNodeBase): child is XmlElement {
+  return child.type === 'element';
 }
 
 export function findVersion(parsedXml: XmlDocument): XmlElement | null {

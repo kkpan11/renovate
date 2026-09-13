@@ -1,9 +1,13 @@
-import { cache } from '../../../util/cache/package/decorator';
-import { joinUrlParts } from '../../../util/url';
-import * as glasskubeVersioning from '../../versioning/glasskube';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
-import { GlasskubePackageManifest, GlasskubePackageVersions } from './schema';
+import { coerceArray } from '../../../util/array.ts';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { joinUrlParts } from '../../../util/url.ts';
+import * as glasskubeVersioning from '../../versioning/glasskube/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, ReleaseResult } from '../types.ts';
+import {
+  GlasskubePackageManifest,
+  GlasskubePackageVersions,
+} from './schema.ts';
 
 export class GlasskubePackagesDatasource extends Datasource {
   static readonly id = 'glasskube-packages';
@@ -20,12 +24,7 @@ export class GlasskubePackagesDatasource extends Datasource {
     super(GlasskubePackagesDatasource.id);
   }
 
-  @cache({
-    namespace: `datasource-${GlasskubePackagesDatasource.id}`,
-    key: ({ registryUrl, packageName }: GetReleasesConfig) =>
-      `${registryUrl}:${packageName}`,
-  })
-  override async getReleases({
+  private async _getReleases({
     packageName,
     registryUrl,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
@@ -63,7 +62,7 @@ export class GlasskubePackagesDatasource extends Datasource {
       this.handleGenericErrors(latestManifestErr);
     }
 
-    for (const ref of latestManifest?.references ?? []) {
+    for (const ref of coerceArray(latestManifest?.references)) {
       if (ref.label.toLowerCase() === 'github') {
         result.sourceUrl = ref.url;
       } else if (ref.label.toLowerCase() === 'website') {
@@ -72,5 +71,18 @@ export class GlasskubePackagesDatasource extends Datasource {
     }
 
     return result;
+  }
+
+  override getReleases(
+    config: GetReleasesConfig,
+  ): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: `datasource-${GlasskubePackagesDatasource.id}`,
+        key: `${config.registryUrl}:${config.packageName}`,
+        fallback: true,
+      },
+      () => this._getReleases(config),
+    );
   }
 }

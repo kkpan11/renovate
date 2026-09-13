@@ -1,9 +1,10 @@
-import { cache } from '../../../util/cache/package/decorator';
-import { asTimestamp } from '../../../util/timestamp';
-import * as gradleVersioning from '../../versioning/gradle';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, Release, ReleaseResult } from '../types';
-import type { GradleRelease } from './types';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { regEx } from '../../../util/regex.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import * as gradleVersioning from '../../versioning/gradle/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, Release, ReleaseResult } from '../types.ts';
+import { GradleReleases } from './schema.ts';
 
 export class GradleVersionDatasource extends Datasource {
   static readonly id = 'gradle-version';
@@ -27,23 +28,17 @@ export class GradleVersionDatasource extends Datasource {
   override readonly sourceUrlNote =
     'We use the URL: https://github.com/gradle/gradle.';
 
-  @cache({
-    namespace: `datasource-${GradleVersionDatasource.id}`,
-    // TODO: types (#22198)
-    key: ({ registryUrl }: GetReleasesConfig) => `${registryUrl}`,
-  })
-  async getReleases({
+  private async _getReleases({
     registryUrl,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
-    /* v8 ignore next 3 -- should never happen */
+    /* v8 ignore next -- should never happen */
     if (!registryUrl) {
       return null;
     }
 
     let releases: Release[];
     try {
-      const response =
-        await this.http.getJsonUnchecked<GradleRelease[]>(registryUrl);
+      const response = await this.http.getJson(registryUrl, GradleReleases);
       releases = response.body
         .filter((release) => !release.snapshot && !release.nightly)
         .map((release) => {
@@ -76,6 +71,18 @@ export class GradleVersionDatasource extends Datasource {
     return null;
   }
 
+  getReleases(config: GetReleasesConfig): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: `datasource-${GradleVersionDatasource.id}`,
+        // TODO: types (#22198)
+        key: `${config.registryUrl}`,
+        fallback: true,
+      },
+      () => this._getReleases(config),
+    );
+  }
+
   /**
    * Calculate `gitTag` based on `version`:
    *   - `8.1.2` -> `v8.1.2`
@@ -84,7 +91,9 @@ export class GradleVersionDatasource extends Datasource {
    *   - `8.2-milestone-1` -> `v8.2.0-M1`
    */
   private static getGitRef(version: string): string {
-    const [versionPart, typePart, unstablePart] = version.split(/-([a-z]+)-/);
+    const [versionPart, typePart, unstablePart] = version.split(
+      regEx(/-(?<type>[a-z]+)-/),
+    );
 
     let suffix = '';
     if (typePart === 'rc') {

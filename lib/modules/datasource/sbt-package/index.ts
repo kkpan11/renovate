@@ -1,18 +1,22 @@
-import * as upath from 'upath';
+import upath from 'upath';
 import { XmlDocument } from 'xmldoc';
-import { logger } from '../../../logger';
-import * as packageCache from '../../../util/cache/package';
-import { cache } from '../../../util/cache/package/decorator';
-import { Http } from '../../../util/http';
-import { regEx } from '../../../util/regex';
-import type { Timestamp } from '../../../util/timestamp';
-import { asTimestamp } from '../../../util/timestamp';
-import { ensureTrailingSlash, trimTrailingSlash } from '../../../util/url';
-import * as ivyVersioning from '../../versioning/ivy';
-import { compare } from '../../versioning/maven/compare';
-import { MavenDatasource } from '../maven';
-import { MAVEN_REPO } from '../maven/common';
-import { downloadHttpContent, downloadHttpProtocol } from '../maven/util';
+import { logger } from '../../../logger/index.ts';
+import * as packageCache from '../../../util/cache/package/index.ts';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { Http } from '../../../util/http/index.ts';
+import { regEx } from '../../../util/regex.ts';
+import type { Timestamp } from '../../../util/timestamp.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import {
+  ensureTrailingSlash,
+  parseUrl,
+  trimTrailingSlash,
+} from '../../../util/url.ts';
+import * as ivyVersioning from '../../versioning/ivy/index.ts';
+import { compare } from '../../versioning/maven/compare.ts';
+import { MAVEN_REPO } from '../maven/common.ts';
+import { MavenDatasource } from '../maven/index.ts';
+import { downloadHttpContent, downloadHttpProtocol } from '../maven/util.ts';
 import type {
   GetReleasesConfig,
   PostprocessReleaseConfig,
@@ -20,8 +24,8 @@ import type {
   RegistryStrategy,
   Release,
   ReleaseResult,
-} from '../types';
-import { extractPageLinks, getLatestVersion } from './util';
+} from '../types.ts';
+import { extractPageLinks, getLatestVersion } from './util.ts';
 
 interface ScalaDepCoordinate {
   groupId: string;
@@ -80,8 +84,9 @@ export class SbtPackageDatasource extends MavenDatasource {
     if (validRootUrl) {
       packageRootUrls.push(validRootUrl);
     } else {
-      const packageRootUrlWith = (sep: string): string =>
-        `${repoRootUrl}${groupIdSplit.join(sep)}`;
+      function packageRootUrlWith(sep: string): string {
+        return `${repoRootUrl}${groupIdSplit.join(sep)}`;
+      }
       packageRootUrls.push(ensureTrailingSlash(packageRootUrlWith('/')));
       packageRootUrls.push(ensureTrailingSlash(packageRootUrlWith('.')));
     }
@@ -106,7 +111,12 @@ export class SbtPackageDatasource extends MavenDatasource {
 
       dependencyUrl = trimTrailingSlash(packageRootUrl);
 
-      const rootPath = new URL(packageRootUrl).pathname;
+      const parsedPackageRootUrl = parseUrl(packageRootUrl);
+      if (!parsedPackageRootUrl) {
+        logger.warn({ packageRootUrl }, 'Failed to parse packageURL');
+        continue;
+      }
+      const rootPath = parsedPackageRootUrl.pathname;
       const artifactSubdirs = extractPageLinks(packageRootContent, (href) => {
         const path = href.replace(rootPath, '');
 
@@ -153,6 +163,12 @@ export class SbtPackageDatasource extends MavenDatasource {
 
     const allVersions = new Set<string>();
     for (const pkgUrl of packageUrls) {
+      const parsedPkgUrl = parseUrl(pkgUrl);
+      if (!parsedPkgUrl) {
+        invalidPackageUrls.add(pkgUrl);
+        continue;
+      }
+
       const packageContent = await downloadHttpContent(this.http, pkgUrl);
       // istanbul ignore if
       if (!packageContent) {
@@ -160,7 +176,7 @@ export class SbtPackageDatasource extends MavenDatasource {
         continue;
       }
 
-      const rootPath = new URL(pkgUrl).pathname;
+      const rootPath = parsedPkgUrl.pathname;
       const versions = extractPageLinks(packageContent, (href) => {
         const path = href.replace(rootPath, '');
         if (path.startsWith('.')) {
@@ -256,7 +272,7 @@ export class SbtPackageDatasource extends MavenDatasource {
       ),
     );
 
-    const saveCache = async (): Promise<void> => {
+    async function saveCache(): Promise<void> {
       if (invalidPomFiles.size > 0) {
         await packageCache.set(
           'datasource-sbt-package',
@@ -265,7 +281,7 @@ export class SbtPackageDatasource extends MavenDatasource {
           30 * 24 * 60,
         );
       }
-    };
+    }
 
     for (const packageUrl of packageUrls) {
       const artifactDir = upath.basename(packageUrl);
@@ -343,19 +359,11 @@ export class SbtPackageDatasource extends MavenDatasource {
     return null;
   }
 
-  @cache({
-    namespace: 'datasource-sbt-package',
-    key: (
-      { registryUrl, packageName }: PostprocessReleaseConfig,
-      { version }: Release,
-    ) => `postprocessRelease:${registryUrl}:${packageName}:${version}`,
-    ttlMinutes: 30 * 24 * 60,
-  })
-  override async postprocessRelease(
+  private async _postprocessRelease(
     config: PostprocessReleaseConfig,
     release: Release,
   ): Promise<PostprocessReleaseResult> {
-    /* v8 ignore next 3 -- should never happen */
+    /* v8 ignore next -- should never happen */
     if (!config.registryUrl) {
       return release;
     }
@@ -371,5 +379,19 @@ export class SbtPackageDatasource extends MavenDatasource {
     }
 
     return release;
+  }
+
+  override postprocessRelease(
+    config: PostprocessReleaseConfig,
+    release: Release,
+  ): Promise<PostprocessReleaseResult> {
+    return withCache(
+      {
+        namespace: 'datasource-sbt-package',
+        key: `postprocessRelease:${config.registryUrl}:${config.packageName}:${release.version}`,
+        ttlMinutes: 30 * 24 * 60,
+      },
+      () => this._postprocessRelease(config, release),
+    );
   }
 }

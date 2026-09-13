@@ -1,4 +1,4 @@
-import { regEx } from '../../../util/regex';
+import { regEx } from '../../../util/regex.ts';
 
 const regex = regEx(/^(?<codename>\w+)-(?<date>\d{8})(?<suffix>\.\d{1,2})?$/);
 
@@ -33,8 +33,8 @@ function getDatedContainerImageSuffix(version: string): null | string {
 }
 
 export {
-  isDatedCodeName,
   getDatedContainerImageCodename,
-  getDatedContainerImageVersion,
   getDatedContainerImageSuffix,
+  getDatedContainerImageVersion,
+  isDatedCodeName,
 };

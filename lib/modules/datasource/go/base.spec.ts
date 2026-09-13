@@ -1,16 +1,11 @@
-import { mockDeep } from 'vitest-mock-extended';
-import { GlobalConfig } from '../../../config/global';
-import * as _hostRules from '../../../util/host-rules';
-import { GitTagsDatasource } from '../git-tags';
-import { GithubTagsDatasource } from '../github-tags';
-import { GitlabTagsDatasource } from '../gitlab-tags';
-import { BaseGoDatasource } from './base';
-import { Fixtures } from '~test/fixtures';
-import * as httpMock from '~test/http-mock';
-
-vi.mock('../../../util/host-rules', () => mockDeep());
-
-const hostRules = vi.mocked(_hostRules);
+import { Fixtures } from '~test/fixtures.ts';
+import { hostRules } from '~test/host-rules.ts';
+import * as httpMock from '~test/http-mock.ts';
+import { GlobalConfig } from '../../../config/global.ts';
+import { GitTagsDatasource } from '../git-tags/index.ts';
+import { GithubTagsDatasource } from '../github-tags/index.ts';
+import { GitlabTagsDatasource } from '../gitlab-tags/index.ts';
+import { BaseGoDatasource } from './base.ts';
 
 describe('modules/datasource/go/base', () => {
   describe('simple cases', () => {
@@ -24,8 +19,8 @@ describe('modules/datasource/go/base', () => {
       ${'dev.azure.com/foo/bar/_git/baz.git'}             | ${'git-tags'}       | ${'https://dev.azure.com/foo/bar/_git/baz'}
       ${'dev.azure.com/foo/bar/baz.git'}                  | ${'git-tags'}       | ${'https://dev.azure.com/foo/bar/_git/baz'}
       ${'gitea.com/go-chi/cache'}                         | ${'gitea-tags'}     | ${'go-chi/cache'}
-      ${'code.forgejo.org/go-chi/cache'}                  | ${'gitea-tags'}     | ${'go-chi/cache'}
-      ${'codeberg.org/eviedelta/detctime/durationparser'} | ${'gitea-tags'}     | ${'eviedelta/detctime'}
+      ${'code.forgejo.org/go-chi/cache'}                  | ${'forgejo-tags'}   | ${'go-chi/cache'}
+      ${'codeberg.org/eviedelta/detctime/durationparser'} | ${'forgejo-tags'}   | ${'eviedelta/detctime'}
     `(
       '$module -> $datasource: $packageName',
       async ({ module, datasource, packageName }) => {
@@ -37,8 +32,6 @@ describe('modules/datasource/go/base', () => {
 
   describe('go-get requests', () => {
     beforeEach(() => {
-      hostRules.find.mockReturnValue({});
-      hostRules.hosts.mockReturnValue([]);
       GlobalConfig.reset();
     });
 
@@ -102,7 +95,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitHub EE deps', async () => {
-        hostRules.hostType.mockReturnValue('github');
+        hostRules.add({ matchHost: 'git.enterprise.com', hostType: 'github' });
         httpMock
           .scope('https://git.enterprise.com')
           .get('/example/module?go-get=1')
@@ -119,7 +112,7 @@ describe('modules/datasource/go/base', () => {
         });
       });
 
-      it.skip('supports Go submodules in GitLab repo', async () => {
+      it('supports Go submodules in GitLab repo', async () => {
         httpMock
           .scope('https://gitlab.com')
           .get('/example/module/submodule?go-get=1')
@@ -224,7 +217,9 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('returns null for invalid GitLab EE go-source URL', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        // a real host rule cannot match an unparseable URL, so spy to reach
+        // the URL parsing branch
+        vi.spyOn(hostRules, 'hostType').mockReturnValueOnce('gitlab');
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/myrepo?go-get=1')
@@ -241,7 +236,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitLab EE deps', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/myrepo?go-get=1')
@@ -259,7 +254,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitLab EE deps in subgroup', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/subgroup/myrepo?go-get=1')
@@ -279,7 +274,7 @@ describe('modules/datasource/go/base', () => {
       it('supports GitLab EE deps in private subgroup with api/ as part of packageName and api/v4 as part of endpoint', async () => {
         GlobalConfig.set({ endpoint: 'https://my.custom.domain/api/v4' });
 
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/group/subgroup-api/myrepo?go-get=1')
@@ -300,7 +295,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitLab EE deps in subgroup with version', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/subgroup/myrepo/v2?go-get=1')
@@ -318,7 +313,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitLab EE deps in private subgroup with vcs indicator', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/subgroup/myrepo?go-get=1')
@@ -336,7 +331,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitLab EE deps in private subgroup with vcs indicator and subfolders', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/subgroup/myrepo?go-get=1')
@@ -354,7 +349,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('supports GitLab EE monorepo deps in subgroup', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'my.custom.domain', hostType: 'gitlab' });
         httpMock
           .scope('https://my.custom.domain')
           .get('/golang/subgroup/myrepo/monorepo?go-get=1')
@@ -502,7 +497,7 @@ describe('modules/datasource/go/base', () => {
       });
 
       it('correctly splits a URL where the endpoint is contained', async () => {
-        hostRules.hostType.mockReturnValue('gitlab');
+        hostRules.add({ matchHost: 'example.com', hostType: 'gitlab' });
 
         GlobalConfig.set({ endpoint: 'https://example.com/gitlab/api/v4/' });
 

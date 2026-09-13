@@ -10,12 +10,11 @@ Options:
 | option                     | default  | description                                                                                                                                                              |
 | -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | defaultRegistryUrlTemplate | `""`     | URL used if no `registryUrl` is provided when looking up new releases                                                                                                    |
-| format                     | `"json"` | format used by the API. Available values are: `json`, `plain`, `yaml`, `html`                                                                                            |
+| format                     | `"json"` | format used by the API. Available values are: `html`, `json`, `plain`, `toml`, `yaml`                                                                                    |
 | transformTemplates         | `[]`     | [JSONata rules](https://docs.jsonata.org/simple) to transform the API output. Each rule will be evaluated after another and the result will be used as input to the next |
 
-<!-- prettier-ignore -->
 !!! tip
-    Use [JSONata Exerciser](https://try.jsonata.org/) to test your JSONata rules.
+  Use [JSONata Exerciser](https://try.jsonata.org/) to test your JSONata rules.
 
 Available template variables:
 
@@ -49,7 +48,7 @@ After all transformations, the resulting JSON must match one of these formats:
 
 Minimal-supported object:
 
-```json
+```json {configType=none}
 {
   "releases": [
     {
@@ -64,7 +63,7 @@ Minimal-supported object:
 
 All available options:
 
-```json
+```json {configType=none}
 {
   "releases": [
     {
@@ -98,7 +97,7 @@ If you use the Mend Renovate app, use the [`logLevelRemap` config option](../../
 {
   "logLevelRemap": [
     {
-      "matchMessage": "/^Custom manager fetcher/",
+      "matchMessage": "/^Custom datasource/",
       "newLogLevel": "info"
     }
   ]
@@ -134,7 +133,7 @@ Suppose the body of the HTTP response is as follows:
 
 When Renovate receives this response with the `plain` format, it will convert it into the following:
 
-```json
+```json {configType=none}
 {
   "releases": [
     {
@@ -167,7 +166,7 @@ releases:
 
 When Renovate receives this response with the `yaml` format, it will convert it into the following:
 
-```json
+```json {configType=none}
 {
   "releases": [
     {
@@ -184,6 +183,39 @@ When Renovate receives this response with the `yaml` format, it will convert it 
 ```
 
 After the conversion, any `jsonata` rules defined in the `transformTemplates` section will be applied as usual to further process the JSON data.
+
+#### TOML
+
+If `toml` is used, response is parsed and converted into TOML for further processing.
+
+The below TOML document
+
+```toml
+[[releases]]
+version = "1.0.0"
+[[releases]]
+version = "2.0.0"
+[[releases]]
+version = "3.0.0"
+```
+
+Will convert applying any `jsonata` rules defined in the `transformTemplates` section will be applied.
+
+```json {configType=none}
+{
+  "releases": [
+    {
+      "version": "1.0.0"
+    },
+    {
+      "version": "2.0.0"
+    },
+    {
+      "version": "3.0.0"
+    }
+  ]
+}
+```
 
 #### HTML
 
@@ -203,7 +235,7 @@ For the following HTML document:
 
 The following JSON will be generated:
 
-```json
+```json {configType=none}
 {
   "releases": [
     {
@@ -326,6 +358,8 @@ Sometimes the "dependency version source" is _not_ available via an API.
 To work around a missing API, you can create dependency "files".
 These files are served via HTTP(S), so that Renovate can access them.
 For example, imagine the following file `versiontracker.json` for the software `something`:
+
+<!-- schema-validation-disable-next-block -->
 
 ```json
 [

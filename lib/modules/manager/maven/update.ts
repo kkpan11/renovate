@@ -1,14 +1,14 @@
-import is from '@sindresorhus/is';
+import { isString } from '@sindresorhus/is';
 import type { ReleaseType } from 'semver';
 import semver from 'semver';
 import { XmlDocument } from 'xmldoc';
-import { logger } from '../../../logger';
-import { replaceAt } from '../../../util/string';
+import { logger } from '../../../logger/index.ts';
+import { replaceAt } from '../../../util/string.ts';
 import type {
   BumpPackageVersionResult,
   UpdateDependencyConfig,
   Upgrade,
-} from '../types';
+} from '../types.ts';
 
 export function updateAtPosition(
   fileContent: string,
@@ -70,6 +70,26 @@ export function updateAtPosition(
     const replacedPart = versionPart.replace(version, newValue!);
     return leftPart + replacedPart + restPart;
   }
+  if (
+    upgrade.datasource === 'docker' ||
+    upgrade.datasource === 'buildpacks-registry'
+  ) {
+    // In contrast to maven dependencies, cloud native buildpacks are not contained in specific version tags.
+    // Instead they are contained in the value of the buildpack tag and we have to update it differently.
+    let replacedPart = version;
+    if (currentValue) {
+      replacedPart = version.replace(currentValue, newValue!);
+    }
+    if (upgrade.currentDigest && upgrade.newDigest) {
+      replacedPart = replacedPart.replace(
+        upgrade.currentDigest,
+        upgrade.newDigest,
+      );
+    }
+    if (replacedPart !== version) {
+      return leftPart + replacedPart + restPart;
+    }
+  }
   logger.debug({ depName, version, currentValue, newValue }, 'Unknown value');
   return null;
 }
@@ -113,7 +133,7 @@ export function bumpPackageVersion(
   try {
     const project = new XmlDocument(content);
     const versionNode = project.childNamed('version')!;
-    const startTagPosition = versionNode.startTagPosition;
+    const startTagPosition = versionNode.startTagPosition!; // TODO: should not be null
     const versionPosition = content.indexOf(versionNode.val, startTagPosition);
 
     let newPomVersion: string | null = null;
@@ -173,7 +193,7 @@ export function bumpPackageVersion(
 
 function isSnapshot(prerelease: readonly (string | number)[] | null): boolean {
   const lastPart = prerelease?.at(-1);
-  return is.string(lastPart) && lastPart.endsWith('SNAPSHOT');
+  return isString(lastPart) && lastPart.endsWith('SNAPSHOT');
 }
 
 function updateValue(
@@ -182,9 +202,9 @@ function updateValue(
   oldValue: string,
   newValue: string,
 ): string {
-  const elementStart = content.indexOf('<' + nodeName);
+  const elementStart = content.indexOf(`<${nodeName}`);
   const start = content.indexOf('>', elementStart) + 1;
-  const end = content.indexOf('</' + nodeName, start);
+  const end = content.indexOf(`</${nodeName}`, start);
   const elementContent = content.slice(start, end);
   if (elementContent.trim() === oldValue) {
     return (

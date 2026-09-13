@@ -1,4 +1,5 @@
-import { parsePreset } from './parse';
+import { isRelativePresetReference, parsePreset } from './parse.ts';
+import { PRESET_INVALID } from './util.ts';
 
 describe('config/presets/parse', () => {
   describe('parsePreset', () => {
@@ -7,6 +8,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset(':base')).toEqual({
         repo: 'default',
         params: undefined,
+        rawParams: undefined,
         presetName: 'base',
         presetPath: undefined,
         presetSource: 'internal',
@@ -17,6 +19,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'github',
@@ -27,6 +30,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo:foo+bar')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'foo+bar',
         presetPath: undefined,
         presetSource: 'github',
@@ -37,6 +41,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo:somefile')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile',
         presetPath: undefined,
         presetSource: 'github',
@@ -47,6 +52,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo:somefile/somepreset')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile/somepreset',
         presetPath: undefined,
         presetSource: 'github',
@@ -57,6 +63,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo:somefile.json')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile.json',
         presetPath: undefined,
         presetSource: 'github',
@@ -68,6 +75,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo:somefile.json5')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile.json5',
         presetPath: undefined,
         presetSource: 'github',
@@ -79,6 +87,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo:somefile.json/somepreset')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile.json/somepreset',
         presetPath: undefined,
         presetSource: 'github',
@@ -91,6 +100,7 @@ describe('config/presets/parse', () => {
         {
           repo: 'some/repo',
           params: undefined,
+          rawParams: undefined,
           presetName: 'somefile.json5/somepreset',
           presetPath: undefined,
           presetSource: 'github',
@@ -105,6 +115,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile/somepreset/somesubpreset',
         presetPath: undefined,
         presetSource: 'github',
@@ -117,6 +128,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile',
         presetPath: 'somepath/somesubpath',
         presetSource: 'github',
@@ -127,6 +139,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('github>some/repo//somefile')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile',
         presetPath: undefined,
         presetSource: 'github',
@@ -137,6 +150,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('gitlab>some/repo')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'gitlab',
@@ -147,9 +161,21 @@ describe('config/presets/parse', () => {
       expect(parsePreset('gitea>some/repo')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'gitea',
+      });
+    });
+
+    it('parses forgejo', () => {
+      expect(parsePreset('forgejo>some/repo')).toEqual({
+        repo: 'some/repo',
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'default',
+        presetPath: undefined,
+        presetSource: 'forgejo',
       });
     });
 
@@ -157,6 +183,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('local>some/repo')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'local',
@@ -167,6 +194,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('local>A2B CD/A2B_Renovate')).toEqual({
         repo: 'A2B CD/A2B_Renovate',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'local',
@@ -179,6 +207,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'some-group/some-repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'some-file',
         presetPath: 'some-dir',
         presetSource: 'local',
@@ -191,6 +220,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'A2B CD/A2B_Renovate',
         params: undefined,
+        rawParams: undefined,
         presetName: 'some-file',
         presetPath: 'some-dir',
         presetSource: 'local',
@@ -203,6 +233,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'some-group/some-repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'some-file/subpreset',
         presetPath: undefined,
         presetSource: 'local',
@@ -216,6 +247,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'some-group/some-repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'some-file',
         presetPath: 'some-dir',
         presetSource: 'local',
@@ -229,6 +261,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'PROJECT/repository',
         params: undefined,
+        rawParams: undefined,
         presetName: 'preset',
         presetPath: 'path/to',
         presetSource: 'local',
@@ -242,6 +275,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'PROJECT/repository',
         params: undefined,
+        rawParams: undefined,
         presetName: 'preset/subpreset',
         presetPath: undefined,
         presetSource: 'local',
@@ -249,10 +283,35 @@ describe('config/presets/parse', () => {
       });
     });
 
+    it('parses local repo with presetPath with URL-encoded characters', () => {
+      expect(
+        parsePreset('local>some%20group/some%20repo//some-dir/some-file'),
+      ).toEqual({
+        repo: 'some%20group/some%20repo',
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'some-file',
+        presetPath: 'some-dir',
+        presetSource: 'local',
+      });
+    });
+
+    it('parses local repo with URL-encoded characters', () => {
+      expect(parsePreset('local>some%20group/some%20repo//some-file')).toEqual({
+        repo: 'some%20group/some%20repo',
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'some-file',
+        presetPath: undefined,
+        presetSource: 'local',
+      });
+    });
+
     it('parses no prefix as local', () => {
       expect(parsePreset('some/repo')).toEqual({
         repo: 'some/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'local',
@@ -263,6 +322,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('local>~john_doe/repo//somefile')).toEqual({
         repo: '~john_doe/repo',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somefile',
         presetPath: undefined,
         presetSource: 'local',
@@ -273,6 +333,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('local>~john_doe/renovate-config')).toEqual({
         repo: '~john_doe/renovate-config',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'local',
@@ -283,6 +344,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset(':group(packages/eslint, eslint)')).toEqual({
         repo: 'default',
         params: ['packages/eslint', 'eslint'],
+        rawParams: 'packages/eslint, eslint',
         presetName: 'group',
         presetPath: undefined,
         presetSource: 'internal',
@@ -294,6 +356,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('@somescope')).toEqual({
         repo: '@somescope/renovate-config',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'npm',
@@ -304,6 +367,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('@somescope(param1)')).toEqual({
         repo: '@somescope/renovate-config',
         params: ['param1'],
+        rawParams: 'param1',
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'npm',
@@ -314,6 +378,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('@somescope/somepackagename')).toEqual({
         repo: '@somescope/somepackagename',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'npm',
@@ -326,6 +391,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: '@somescope/somepackagename',
         params: ['param1', 'param2', 'param3'],
+        rawParams: 'param1, param2, param3',
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'npm',
@@ -336,6 +402,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('@somescope:somePresetName')).toEqual({
         repo: '@somescope/renovate-config',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somePresetName',
         presetPath: undefined,
         presetSource: 'npm',
@@ -346,6 +413,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('@somescope:somePresetName(param1)')).toEqual({
         repo: '@somescope/renovate-config',
         params: ['param1'],
+        rawParams: 'param1',
         presetName: 'somePresetName',
         presetPath: undefined,
         presetSource: 'npm',
@@ -356,6 +424,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('@somescope/somepackagename:somePresetName')).toEqual({
         repo: '@somescope/somepackagename',
         params: undefined,
+        rawParams: undefined,
         presetName: 'somePresetName',
         presetPath: undefined,
         presetSource: 'npm',
@@ -370,6 +439,7 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: '@somescope/somepackagename',
         params: ['param1', 'param2'],
+        rawParams: 'param1, param2',
         presetName: 'somePresetName',
         presetPath: undefined,
         presetSource: 'npm',
@@ -381,6 +451,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('somepackage')).toEqual({
         repo: 'renovate-config-somepackage',
         params: undefined,
+        rawParams: undefined,
         presetName: 'default',
         presetPath: undefined,
         presetSource: 'npm',
@@ -391,6 +462,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('somepackage:webapp')).toEqual({
         repo: 'renovate-config-somepackage',
         params: undefined,
+        rawParams: undefined,
         presetName: 'webapp',
         presetPath: undefined,
         presetSource: 'npm',
@@ -401,6 +473,7 @@ describe('config/presets/parse', () => {
       expect(parsePreset('renovate-config-somepackage:webapp')).toEqual({
         repo: 'renovate-config-somepackage',
         params: undefined,
+        rawParams: undefined,
         presetName: 'webapp',
         presetPath: undefined,
         presetSource: 'npm',
@@ -411,13 +484,14 @@ describe('config/presets/parse', () => {
       expect(parsePreset('somepackage:webapp(param1)')).toEqual({
         repo: 'renovate-config-somepackage',
         params: ['param1'],
+        rawParams: 'param1',
         presetName: 'webapp',
         presetPath: undefined,
         presetSource: 'npm',
       });
     });
 
-    it('parses HTTPS URLs', () => {
+    it('parses HTTPS URLs for gitea', () => {
       expect(
         parsePreset(
           'https://my.server/gitea/renovate-config/raw/branch/main/default.json',
@@ -425,6 +499,22 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'https://my.server/gitea/renovate-config/raw/branch/main/default.json',
         params: undefined,
+        rawParams: undefined,
+        presetName: '',
+        presetPath: undefined,
+        presetSource: 'http',
+      });
+    });
+
+    it('parses HTTPS URLs for forgejo', () => {
+      expect(
+        parsePreset(
+          'https://my.server/forgejo/renovate-config/raw/branch/main/default.json',
+        ),
+      ).toEqual({
+        repo: 'https://my.server/forgejo/renovate-config/raw/branch/main/default.json',
+        params: undefined,
+        rawParams: undefined,
         presetName: '',
         presetPath: undefined,
         presetSource: 'http',
@@ -439,13 +529,14 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'http://my.server/users/me/repos/renovate-presets/raw/default.json?at=refs%2Fheads%2Fmain',
         params: undefined,
+        rawParams: undefined,
         presetName: '',
         presetPath: undefined,
         presetSource: 'http',
       });
     });
 
-    it('parses HTTPS URLs with parameters', () => {
+    it('parses HTTPS URLs with parameters for gitea', () => {
       expect(
         parsePreset(
           'https://my.server/gitea/renovate-config/raw/branch/main/default.json(param1)',
@@ -453,10 +544,218 @@ describe('config/presets/parse', () => {
       ).toEqual({
         repo: 'https://my.server/gitea/renovate-config/raw/branch/main/default.json',
         params: ['param1'],
+        rawParams: 'param1',
         presetName: '',
         presetPath: undefined,
         presetSource: 'http',
       });
+    });
+
+    it('parses HTTPS URLs with parameters for forgejo', () => {
+      expect(
+        parsePreset(
+          'https://my.server/forgejo/renovate-config/raw/branch/main/default.json(param1)',
+        ),
+      ).toEqual({
+        repo: 'https://my.server/forgejo/renovate-config/raw/branch/main/default.json',
+        params: ['param1'],
+        rawParams: 'param1',
+        presetName: '',
+        presetPath: undefined,
+        presetSource: 'http',
+      });
+    });
+
+    it.each`
+      input                | presetName
+      ${'./foo'}           | ${'./foo'}
+      ${'./foo/bar'}       | ${'./foo/bar'}
+      ${'./foo.json5'}     | ${'./foo.json5'}
+      ${'../foo'}          | ${'../foo'}
+      ${'../../foo/bar'}   | ${'../../foo/bar'}
+      ${'./foo/../bar'}    | ${'./foo/../bar'}
+      ${'./a/../b'}        | ${'./a/../b'}
+      ${'/foo'}            | ${'/foo'}
+      ${'/foo/bar-baz.js'} | ${'/foo/bar-baz.js'}
+    `('parses relative preset $input', ({ input, presetName }) => {
+      expect(parsePreset(input as string)).toEqual({
+        repo: '',
+        params: undefined,
+        rawParams: undefined,
+        presetName,
+        presetPath: undefined,
+        presetSource: 'relative',
+        tag: undefined,
+      });
+    });
+
+    it('parses relative preset with params', () => {
+      expect(parsePreset('./foo/bar(param1, param2)')).toEqual({
+        repo: '',
+        params: ['param1', 'param2'],
+        rawParams: 'param1, param2',
+        presetName: './foo/bar',
+        presetPath: undefined,
+        presetSource: 'relative',
+        tag: undefined,
+      });
+    });
+
+    it('parses relative preset with params which contain a hash', () => {
+      expect(parsePreset('./foo(p#1)')).toEqual({
+        repo: '',
+        params: ['p#1'],
+        rawParams: 'p#1',
+        presetName: './foo',
+        presetPath: undefined,
+        presetSource: 'relative',
+        tag: undefined,
+      });
+    });
+
+    it('parses relative preset with params which contain a sub-expression', () => {
+      expect(parsePreset('./group({{ lower (env.TEAM) }})')).toEqual({
+        repo: '',
+        params: ['{{ lower (env.TEAM) }}'],
+        rawParams: '{{ lower (env.TEAM) }}',
+        presetName: './group',
+        presetPath: undefined,
+        presetSource: 'relative',
+        tag: undefined,
+      });
+    });
+
+    it('parses relative preset with empty params', () => {
+      expect(parsePreset('./foo()')).toEqual({
+        repo: '',
+        params: [''],
+        rawParams: '',
+        presetName: './foo',
+        presetPath: undefined,
+        presetSource: 'relative',
+        tag: undefined,
+      });
+    });
+
+    it.each`
+      input                 | reason
+      ${'./foo#v1'}         | ${'tag'}
+      ${'./foo(p1)#v1'}     | ${'tag after params'}
+      ${'./foo(p1'}         | ${'unclosed params'}
+      ${'./foo//bar'}       | ${'double slash'}
+      ${'./'}               | ${'no path'}
+      ${'/'}                | ${'no path'}
+      ${'./foo/'}           | ${'trailing slash'}
+      ${'../'}              | ${'no path'}
+      ${'/foo bar'}         | ${'space'}
+      ${'./.'}              | ${'final segment names a directory'}
+      ${'./..'}             | ${'final segment names a directory'}
+      ${'./a/..'}           | ${'final segment names a directory'}
+      ${'../a/..'}          | ${'final segment names a directory'}
+      ${'.././.'}           | ${'final segment names a directory'}
+      ${'/a/..'}            | ${'final segment names a directory'}
+      ${'./foo:bar'}        | ${'sub-preset'}
+      ${'./group(eslint))'} | ${'stray closing parenthesis in params'}
+      ${'./foo(a)(b)'}      | ${'two parameter lists'}
+      ${'./foo((a)'}        | ${'unclosed parenthesis in params'}
+      ${'local>./x'}        | ${'local source prefix'}
+      ${'github>../x'}      | ${'github source prefix'}
+      ${'npm>./x'}          | ${'npm source prefix'}
+      ${'local>npm>./x'}    | ${'chained source prefixes'}
+    `('throws for invalid relative preset $input ($reason)', ({ input }) => {
+      expect(() => parsePreset(input as string)).toThrow(PRESET_INVALID);
+    });
+
+    it.each`
+      input   | repo
+      ${'.'}  | ${'renovate-config-.'}
+      ${'..'} | ${'renovate-config-..'}
+    `('keeps npm fallback for $input', ({ input, repo }) => {
+      expect(parsePreset(input as string)).toEqual({
+        repo,
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'default',
+        presetPath: undefined,
+        presetSource: 'npm',
+        tag: undefined,
+      });
+    });
+
+    it.each`
+      input           | repo
+      ${'npm>foo'}    | ${'renovate-config-foo'}
+      ${'npm>@myorg'} | ${'@myorg/renovate-config'}
+    `('parses npm preset $input', ({ input, repo }) => {
+      expect(parsePreset(input as string)).toEqual({
+        repo,
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'default',
+        presetPath: undefined,
+        presetSource: 'npm',
+        tag: undefined,
+      });
+    });
+
+    it('parses scoped npm preset with explicit `npm>` prefix', () => {
+      expect(parsePreset('npm>@myorg/renovate-config')).toEqual({
+        repo: '@myorg/renovate-config',
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'default',
+        presetPath: undefined,
+        presetSource: 'npm',
+        tag: undefined,
+      });
+    });
+
+    it.each`
+      input               | presetSource | repo
+      ${'npm>owner/repo'} | ${'local'}   | ${'owner/repo'}
+      ${'local>npm>foo'}  | ${'local'}   | ${'foo'}
+      ${'github>npm>foo'} | ${'github'}  | ${'foo'}
+    `(
+      'keeps legacy handling of $input',
+      ({ input, presetSource, repo }: Record<string, string>) => {
+        expect(parsePreset(input)).toEqual({
+          repo,
+          params: undefined,
+          rawParams: undefined,
+          presetName: 'default',
+          presetPath: undefined,
+          presetSource,
+          tag: undefined,
+        });
+      },
+    );
+
+    it('keeps legacy handling of `npm>` presets with a path', () => {
+      expect(parsePreset('npm>owner/repo//path/name')).toEqual({
+        repo: 'owner/repo',
+        params: undefined,
+        rawParams: undefined,
+        presetName: 'name',
+        presetPath: 'path',
+        presetSource: 'local',
+        tag: undefined,
+      });
+    });
+  });
+
+  describe('isRelativePresetReference', () => {
+    it.each`
+      input                      | expected
+      ${'./foo'}                 | ${true}
+      ${'../foo'}                | ${true}
+      ${'/foo'}                  | ${true}
+      ${'.'}                     | ${false}
+      ${'..'}                    | ${false}
+      ${'github>a/b'}            | ${false}
+      ${'config:best-practices'} | ${false}
+      ${'a/b'}                   | ${false}
+    `('returns $expected for $input', ({ input, expected }) => {
+      expect(isRelativePresetReference(input as string)).toBe(expected);
     });
   });
 });

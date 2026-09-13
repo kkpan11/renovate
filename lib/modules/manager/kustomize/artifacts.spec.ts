@@ -1,27 +1,31 @@
-import { join } from 'upath';
+import upath from 'upath';
 import { mockDeep } from 'vitest-mock-extended';
-import { envMock, mockExecAll } from '../../../../test/exec-util';
-import { env, fs, git, partial } from '../../../../test/util';
-import { GlobalConfig } from '../../../config/global';
-import type { RepoGlobalConfig } from '../../../config/types';
-import { TEMPORARY_ERROR } from '../../../constants/error-messages';
-import type { StatusResult } from '../../../util/git/types';
-import { getPkgReleases as _getPkgReleases } from '../../datasource';
-import { DockerDatasource } from '../../datasource/docker';
-import { HelmDatasource } from '../../datasource/helm';
-import type { UpdateArtifactsConfig } from '../types';
-import * as kustomize from '.';
+import { envMock, mockExecAll } from '../../../../test/exec-util.ts';
+import { env, fs, git, partial } from '../../../../test/util.ts';
+import { GlobalConfig } from '../../../config/global.ts';
+import type {
+  InternalGlobalConfigOptions,
+  RepoGlobalConfig,
+} from '../../../config/types.ts';
+import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
+import type { StatusResult } from '../../../util/git/types.ts';
+import { DockerDatasource } from '../../datasource/docker/index.ts';
+import { HelmDatasource } from '../../datasource/helm/index.ts';
+import { getPkgReleases as _getPkgReleases } from '../../datasource/index.ts';
+import type { UpdateArtifactsConfig } from '../types.ts';
+import * as kustomize from './index.ts';
 
-vi.mock('../../../util/exec/env');
-vi.mock('../../../util/fs');
-vi.mock('../../datasource', () => mockDeep());
+vi.mock('../../../util/exec/env.ts');
+vi.mock('../../../util/fs/index.ts');
+vi.mock('../../datasource/index.ts', () => mockDeep());
 
 const getPkgReleases = vi.mocked(_getPkgReleases);
 
-const adminConfig: RepoGlobalConfig = {
-  localDir: join('/tmp/github/some/repo'), // `join` fixes Windows CI
-  cacheDir: join('/tmp/renovate/cache'),
-  containerbaseDir: join('/tmp/renovate/cache/containerbase'),
+const adminConfig: RepoGlobalConfig & InternalGlobalConfigOptions = {
+  localDir: upath.join('/tmp/github/some/repo'), // `join` fixes Windows CI
+  cacheDir: upath.join('/tmp/renovate/cache'),
+  containerbaseDir: upath.join('/tmp/renovate/cache/containerbase'),
+  binarySource: 'global',
 };
 
 process.env.CONTAINERBASE = 'true';
@@ -54,14 +58,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent: 'unparseable',
         config,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       { artifactError: { stderr: 'Failed to parse new package file content' } },
     ]);
   });
@@ -77,14 +81,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if no dependency name is found', async () => {
@@ -98,14 +102,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if no registryUrl is found', async () => {
@@ -119,14 +123,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if no packageName is found', async () => {
@@ -140,14 +144,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: DockerDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if neither currentVersion or newVersion is found', async () => {
@@ -161,14 +165,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if newVersion is not found and currentVersion is already inflated', async () => {
@@ -184,14 +188,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if old version is not inflated and kustomizeInflateHelmCharts is not enabled', async () => {
@@ -214,8 +218,8 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
@@ -224,7 +228,7 @@ describe('modules/manager/kustomize/artifacts', () => {
           postUpdateOptions: [],
         },
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
     expect(execSnapshots).toBeEmptyArray();
   });
 
@@ -248,14 +252,14 @@ describe('modules/manager/kustomize/artifacts', () => {
         datasource: HelmDatasource.id,
       },
     ];
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
     expect(execSnapshots).toBeEmptyArray();
   });
 
@@ -286,8 +290,8 @@ describe('modules/manager/kustomize/artifacts', () => {
       },
     ];
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
@@ -296,7 +300,7 @@ describe('modules/manager/kustomize/artifacts', () => {
           postUpdateOptions: [],
         },
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           type: 'addition',
@@ -310,7 +314,9 @@ describe('modules/manager/kustomize/artifacts', () => {
         },
       },
     ]);
-    expect(fs.deleteLocalFile).toHaveBeenCalledWith('charts/example-1.0.0');
+    expect(fs.deleteLocalFile).toHaveBeenCalledExactlyOnceWith(
+      'charts/example-1.0.0',
+    );
     expect(execSnapshots).toMatchObject([
       {
         cmd: 'helm pull --untar --untardir charts/example-2.0.0 --version 2.0.0 --repo https://github.com.com/example/example example',
@@ -339,14 +345,14 @@ describe('modules/manager/kustomize/artifacts', () => {
       },
     ];
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           type: 'addition',
@@ -383,14 +389,14 @@ describe('modules/manager/kustomize/artifacts', () => {
       },
     ];
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           type: 'addition',
@@ -427,14 +433,14 @@ describe('modules/manager/kustomize/artifacts', () => {
       },
     ];
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           type: 'addition',
@@ -476,14 +482,14 @@ describe('modules/manager/kustomize/artifacts', () => {
       releases: [{ version: '2.7.0' }, { version: '3.17.0' }],
     });
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           type: 'addition',
@@ -504,7 +510,7 @@ describe('modules/manager/kustomize/artifacts', () => {
     GlobalConfig.set({
       ...adminConfig,
       binarySource: 'docker',
-      dockerSidecarImage: 'ghcr.io/containerbase/sidecar',
+      dockerSidecarImage: 'ghcr.io/renovatebot/base-image',
     });
     const execSnapshots = mockExecAll();
 
@@ -530,14 +536,14 @@ describe('modules/manager/kustomize/artifacts', () => {
       releases: [{ version: '2.7.0' }, { version: '3.17.0' }],
     });
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
         config,
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         file: {
           type: 'addition',
@@ -547,24 +553,25 @@ describe('modules/manager/kustomize/artifacts', () => {
     ]);
     expect(fs.deleteLocalFile).not.toHaveBeenCalled();
     expect(execSnapshots).toMatchObject([
-      { cmd: 'docker pull ghcr.io/containerbase/sidecar' },
+      { cmd: 'docker pull ghcr.io/renovatebot/base-image' },
       { cmd: 'docker ps --filter name=renovate_sidecar -aq' },
       {
         cmd:
           'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
           '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
           '-v "/tmp/renovate/cache":"/tmp/renovate/cache" ' +
+          '-e CI ' +
           '-e HELM_REGISTRY_CONFIG ' +
           '-e HELM_REPOSITORY_CONFIG ' +
           '-e HELM_REPOSITORY_CACHE ' +
           '-e CONTAINERBASE_CACHE_DIR ' +
           '-w "/tmp/github/some/repo" ' +
-          'ghcr.io/containerbase/sidecar ' +
-          'bash -l -c "' +
+          'ghcr.io/renovatebot/base-image ' +
+          "bash -l -c '" +
           'install-tool helm 3.17.0' +
           ' && ' +
           'helm pull --untar --untardir charts/example-1.0.0 --version 1.0.0 oci://github.com/example/example/example' +
-          '"',
+          "'",
       },
     ]);
   });
@@ -590,8 +597,8 @@ describe('modules/manager/kustomize/artifacts', () => {
       },
     ];
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
@@ -600,7 +607,7 @@ describe('modules/manager/kustomize/artifacts', () => {
           postUpdateOptions: [],
         },
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
     expect(fs.deleteLocalFile).not.toHaveBeenCalled();
     expect(execSnapshots).toBeEmptyArray();
   });
@@ -628,8 +635,8 @@ describe('modules/manager/kustomize/artifacts', () => {
       },
     ];
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps,
         newPackageFileContent,
@@ -638,7 +645,7 @@ describe('modules/manager/kustomize/artifacts', () => {
           postUpdateOptions: [],
         },
       }),
-    ).toEqual([{ artifactError: { stderr: 'not found' } }]);
+    ).resolves.toEqual([{ artifactError: { stderr: 'not found' } }]);
     expect(fs.deleteLocalFile).not.toHaveBeenCalled();
     expect(execSnapshots).toBeEmptyArray();
   });
@@ -679,8 +686,8 @@ describe('modules/manager/kustomize/artifacts', () => {
     const execSnapshots = mockExecAll();
     fs.localPathExists.mockResolvedValueOnce(false);
 
-    expect(
-      await kustomize.updateArtifacts({
+    await expect(
+      kustomize.updateArtifacts({
         packageFileName,
         updatedDeps: [
           {
@@ -694,7 +701,7 @@ describe('modules/manager/kustomize/artifacts', () => {
         newPackageFileContent,
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
     expect(execSnapshots).toMatchObject([
       {
         cmd: "helm pull --untar --untardir 'charts/example && ls -lart; -1.0.0' --version 1.0.0 --repo https://github.com.com/example/example 'example && ls -lart; '",

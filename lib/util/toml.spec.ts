@@ -1,5 +1,5 @@
 import { codeBlock } from 'common-tags';
-import { massage, parse as parseToml } from './toml';
+import { massage, parse as parseToml } from './toml.ts';
 
 describe('util/toml', () => {
   it('works', () => {
@@ -16,6 +16,21 @@ describe('util/toml', () => {
       tool: {
         poetry: {
           include: ['README.md', { path: 'tests', format: 'sdist' }],
+        },
+      },
+    });
+  });
+
+  it('parses toml 1.1 syntax', () => {
+    const input = codeBlock`
+      [tool.poetry]
+      include = { path = "README.md", }
+    `;
+
+    expect(parseToml(input)).toStrictEqual({
+      tool: {
+        poetry: {
+          include: { path: 'README.md' },
         },
       },
     });

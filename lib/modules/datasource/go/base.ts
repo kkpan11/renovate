@@ -1,21 +1,22 @@
 // TODO: types (#22198)
-import { GlobalConfig } from '../../../config/global';
-import { logger } from '../../../logger';
-import { detectPlatform } from '../../../util/common';
-import * as hostRules from '../../../util/host-rules';
-import { Http } from '../../../util/http';
-import { regEx } from '../../../util/regex';
+import { GlobalConfig } from '../../../config/global.ts';
+import { logger } from '../../../logger/index.ts';
+import { detectPlatform } from '../../../util/common.ts';
+import * as hostRules from '../../../util/host-rules.ts';
+import { Http } from '../../../util/http/index.ts';
+import { regEx } from '../../../util/regex.ts';
 import {
   parseUrl,
   trimLeadingSlash,
   trimTrailingSlash,
-} from '../../../util/url';
-import { BitbucketTagsDatasource } from '../bitbucket-tags';
-import { GitTagsDatasource } from '../git-tags';
-import { GiteaTagsDatasource } from '../gitea-tags';
-import { GithubTagsDatasource } from '../github-tags';
-import { GitlabTagsDatasource } from '../gitlab-tags';
-import type { DataSource } from './types';
+} from '../../../util/url.ts';
+import { BitbucketTagsDatasource } from '../bitbucket-tags/index.ts';
+import { ForgejoTagsDatasource } from '../forgejo-tags/index.ts';
+import { GitTagsDatasource } from '../git-tags/index.ts';
+import { GiteaTagsDatasource } from '../gitea-tags/index.ts';
+import { GithubTagsDatasource } from '../github-tags/index.ts';
+import { GitlabTagsDatasource } from '../gitlab-tags/index.ts';
+import type { DataSource } from './types.ts';
 
 // TODO: figure out class hierarchy (#10532)
 export class BaseGoDatasource {
@@ -45,7 +46,7 @@ export class BaseGoDatasource {
 
     if (goModule.startsWith('github.com/')) {
       const split = goModule.split('/');
-      const packageName = split[1] + '/' + split[2];
+      const packageName = `${split[1]}/${split[2]}`;
       return {
         datasource: GithubTagsDatasource.id,
         packageName,
@@ -55,7 +56,7 @@ export class BaseGoDatasource {
 
     if (goModule.startsWith('bitbucket.org/')) {
       const split = goModule.split('/');
-      const packageName = split[1] + '/' + split[2];
+      const packageName = `${split[1]}/${split[2]}`;
       return {
         datasource: BitbucketTagsDatasource.id,
         packageName,
@@ -78,16 +79,7 @@ export class BaseGoDatasource {
     if (goModule.startsWith('dev.azure.com/')) {
       const split = goModule.split('/');
       if ((split.length > 4 && split[3] === '_git') || split.length > 3) {
-        const packageName =
-          'https://dev.azure.com/' +
-          split[1] +
-          '/' +
-          split[2] +
-          '/_git/' +
-          (split[3] === '_git' ? split[4] : split[3]).replace(
-            regEx(/\.git$/),
-            '',
-          );
+        const packageName = `https://dev.azure.com/${split[1]}/${split[2]}/_git/${(split[3] === '_git' ? split[4] : split[3]).replace(regEx(/\.git$/), '')}`;
         return {
           datasource: GitTagsDatasource.id,
           packageName,
@@ -110,7 +102,7 @@ export class BaseGoDatasource {
       const split = goModule.split('/');
       const packageName = `${split[1]}/${split[2]}`;
       return {
-        datasource: GiteaTagsDatasource.id,
+        datasource: ForgejoTagsDatasource.id,
         packageName,
         registryUrl: 'https://code.forgejo.org',
       };
@@ -120,7 +112,7 @@ export class BaseGoDatasource {
       const split = goModule.split('/');
       const packageName = `${split[1]}/${split[2]}`;
       return {
-        datasource: GiteaTagsDatasource.id,
+        datasource: ForgejoTagsDatasource.id,
         packageName,
         registryUrl: 'https://codeberg.org',
       };
@@ -133,7 +125,7 @@ export class BaseGoDatasource {
   private static async goGetDatasource(
     goModule: string,
   ): Promise<DataSource | null> {
-    const goModuleUrl = goModule.replace(/\.git(\/[a-z0-9/]*)?$/, '');
+    const goModuleUrl = goModule.replace(regEx(/\.git(?:\/[a-z0-9/]*)?$/), '');
     const pkgUrl = `https://${goModuleUrl}?go-get=1`;
     const { body: html } = await BaseGoDatasource.http.getText(pkgUrl);
 
@@ -196,8 +188,22 @@ export class BaseGoDatasource {
       BaseGoDatasource.gitlabHttpsRegExp.exec(metadataUrl)?.groups;
     if (metadataUrlMatchGroups) {
       const { httpsRegExpUrl, httpsRegExpName } = metadataUrlMatchGroups;
-      const packageName =
-        vcsIndicatedModule ?? gitlabModuleName ?? httpsRegExpName;
+
+      let packageName = vcsIndicatedModule ?? gitlabModuleName;
+
+      // Detect submodules in monorepos by comparing metadata path and module path
+      if (!vcsIndicatedModule && httpsRegExpName && gitlabModuleName) {
+        const metadataPath = httpsRegExpName;
+        const modulePath = gitlabModuleName;
+
+        if (modulePath.startsWith(`${metadataPath}/`)) {
+          packageName = metadataPath;
+        }
+      }
+
+      // If we still don't have a package name, fall back to the metadata URL path
+      packageName = packageName ?? httpsRegExpName;
+
       return {
         datasource: GitlabTagsDatasource.id,
         registryUrl: httpsRegExpUrl,
@@ -212,7 +218,7 @@ export class BaseGoDatasource {
         return null;
       }
 
-      const endpoint = GlobalConfig.get('endpoint', '');
+      const endpoint = GlobalConfig.get('endpoint');
       const endpointPrefix = regEx(
         /https:\/\/[^/]+\/(?<prefix>.*?\/)(?:api\/v4\/?)?/,
       ).exec(endpoint)?.groups?.prefix;

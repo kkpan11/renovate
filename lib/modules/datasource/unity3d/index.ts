@@ -1,9 +1,9 @@
-import { cache } from '../../../util/cache/package/decorator';
-import { asTimestamp } from '../../../util/timestamp';
-import * as Unity3dVersioning from '../../versioning/unity3d';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
-import { UnityReleasesJSON } from './schema';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import * as Unity3dVersioning from '../../versioning/unity3d/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, ReleaseResult } from '../types.ts';
+import { UnityReleasesJSON } from './schema.ts';
 
 export class Unity3dDatasource extends Datasource {
   static readonly baseUrl =
@@ -20,6 +20,7 @@ export class Unity3dDatasource extends Datasource {
     stable: `${Unity3dDatasource.homepage}releases/editor/releases.xml`,
     beta: `${Unity3dDatasource.homepage}releases/editor/beta/latest.xml`,
   };
+  static readonly limit: number = 25;
 
   static readonly id = 'unity3d';
 
@@ -59,10 +60,10 @@ export class Unity3dDatasource extends Datasource {
   ): Promise<ReleaseResult | null> {
     const translatedRegistryUrl = this.translateStream(registryUrl!);
 
-    const response = await this.http.getJson(
-      translatedRegistryUrl,
-      UnityReleasesJSON,
-    );
+    const isStable: boolean =
+      translatedRegistryUrl === Unity3dDatasource.streams.lts;
+
+    let total: number | null = null;
 
     const result: ReleaseResult = {
       releases: [],
@@ -70,32 +71,51 @@ export class Unity3dDatasource extends Datasource {
       registryUrl: translatedRegistryUrl,
     };
 
-    for (const release of response.body.results) {
-      result.releases.push({
-        version: withHash
-          ? `${release.version} (${release.shortRevision})`
-          : release.version,
-        releaseTimestamp: asTimestamp(release.releaseDate),
-        changelogUrl: release.releaseNotes.url,
-        isStable: translatedRegistryUrl === Unity3dDatasource.streams.lts,
-      });
+    for (
+      let offset = 0;
+      total === null || offset < total;
+      offset += Unity3dDatasource.limit
+    ) {
+      const response = await this.http.getJson(
+        `${translatedRegistryUrl}&limit=${Unity3dDatasource.limit}&offset=${offset}`,
+        UnityReleasesJSON,
+      );
+
+      for (const release of response.body.results) {
+        result.releases.push({
+          version: withHash
+            ? `${release.version} (${release.shortRevision})`
+            : release.version,
+          releaseTimestamp: asTimestamp(release.releaseDate),
+          changelogUrl: release.releaseNotes.url,
+          isStable,
+        });
+      }
+
+      total ??= response.body.total;
     }
 
     return result;
   }
 
-  @cache({
-    namespace: `datasource-${Unity3dDatasource.id}`,
-    key: ({ registryUrl, packageName }: GetReleasesConfig) =>
-      `${registryUrl}:${packageName}`,
-  })
-  async getReleases({
+  private async _getReleases({
     packageName,
     registryUrl,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
     return await this.getByStream(
       registryUrl,
       packageName === 'm_EditorVersionWithRevision',
+    );
+  }
+
+  getReleases(config: GetReleasesConfig): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: `datasource-${Unity3dDatasource.id}`,
+        key: `${config.registryUrl}:${config.packageName}`,
+        fallback: true,
+      },
+      () => this._getReleases(config),
     );
   }
 }

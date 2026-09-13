@@ -1,12 +1,14 @@
 import detectIndent from 'detect-indent';
 import upath from 'upath';
-import { logger } from '../../../logger';
+import { logger } from '../../../logger/index.ts';
 import {
   deleteLocalFile,
   readLocalFile,
   writeLocalFile,
-} from '../../../util/fs';
-import type { LockFile, ParseLockFileResult } from './types';
+} from '../../../util/fs/index.ts';
+
+import { PackageJson } from './schema.ts';
+import type { LockFile, ParseLockFileResult } from './types.ts';
 
 export function parseLockFile(lockFile: string): ParseLockFileResult {
   const detectedIndent = detectIndent(lockFile).indent || '  ';
@@ -22,7 +24,7 @@ export function parseLockFile(lockFile: string): ParseLockFileResult {
 }
 
 export function composeLockFile(lockFile: LockFile, indent: string): string {
-  return JSON.stringify(lockFile, null, indent) + '\n';
+  return `${JSON.stringify(lockFile, null, indent)}\n`;
 }
 
 export async function getNpmrcContent(dir: string): Promise<string | null> {
@@ -30,7 +32,8 @@ export async function getNpmrcContent(dir: string): Promise<string | null> {
   let originalNpmrcContent: string | null = null;
   try {
     originalNpmrcContent = await readLocalFile(npmrcFilePath, 'utf8');
-  } catch /* istanbul ignore next */ {
+  } catch {
+    /* v8 ignore next -- needs test */
     originalNpmrcContent = null;
   }
   if (originalNpmrcContent) {
@@ -54,7 +57,7 @@ export async function updateNpmrcContent(
       logger.debug(`Writing updated .npmrc file to ${npmrcFilePath}`);
       await writeLocalFile(npmrcFilePath, `${newContent}\n`);
     }
-  } catch /* istanbul ignore next */ {
+  } catch /* v8 ignore next -- TODO: add test #40625 */ {
     logger.warn('Unable to write custom npmrc file');
   }
 }
@@ -67,14 +70,26 @@ export async function resetNpmrcContent(
   if (originalContent) {
     try {
       await writeLocalFile(npmrcFilePath, originalContent);
-    } catch /* istanbul ignore next */ {
+    } catch /* v8 ignore next -- TODO: add test #40625 */ {
       logger.warn('Unable to reset npmrc to original contents');
     }
   } else {
     try {
       await deleteLocalFile(npmrcFilePath);
-    } catch /* istanbul ignore next */ {
+    } catch /* v8 ignore next -- TODO: add test #40625 */ {
       logger.warn('Unable to delete custom npmrc');
     }
   }
+}
+
+export async function loadPackageJson(parentDir: string): Promise<PackageJson> {
+  const json = await readLocalFile(
+    upath.join(parentDir, 'package.json'),
+    'utf8',
+  );
+  const res = PackageJson.safeParse(json);
+  if (res.success) {
+    return res.data;
+  }
+  return {};
 }

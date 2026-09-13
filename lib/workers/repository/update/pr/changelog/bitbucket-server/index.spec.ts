@@ -1,13 +1,13 @@
-import { getChangeLogJSON } from '..';
-import type { ChangeLogProject, ChangeLogRelease } from '..';
-import { Fixtures } from '../../../../../../../test/fixtures';
-import * as httpMock from '../../../../../../../test/http-mock';
-import { logger, partial } from '../../../../../../../test/util';
-import * as semverVersioning from '../../../../../../modules/versioning/semver';
-import * as hostRules from '../../../../../../util/host-rules';
-import type { BranchUpgradeConfig } from '../../../../../types';
-import { getReleaseList, getReleaseNotesMdFile } from '../release-notes';
-import { BitbucketServerChangeLogSource } from './source';
+import { Fixtures } from '../../../../../../../test/fixtures.ts';
+import * as httpMock from '../../../../../../../test/http-mock.ts';
+import { logger, partial } from '../../../../../../../test/util.ts';
+import * as semverVersioning from '../../../../../../modules/versioning/semver/index.ts';
+import * as hostRules from '../../../../../../util/host-rules.ts';
+import type { BranchUpgradeConfig } from '../../../../../types.ts';
+import type { ChangeLogProject, ChangeLogRelease } from '../index.ts';
+import { getChangeLogJSON } from '../index.ts';
+import { getReleaseList, getReleaseNotesMdFile } from '../release-notes.ts';
+import { BitbucketServerChangeLogSource } from './source.ts';
 
 const baseUrl = 'https://bitbucket.some.domain.org/';
 const apiBaseUrl = 'https://bitbucket.some.domain.org/rest/api/1.0/';
@@ -15,7 +15,6 @@ const apiBaseUrl = 'https://bitbucket.some.domain.org/rest/api/1.0/';
 const upgrade = partial<BranchUpgradeConfig>({
   manager: 'some-manager',
   branchName: '',
-  endpoint: apiBaseUrl,
   packageName: 'renovate',
   versioning: semverVersioning.id,
   currentVersion: '5.2.0',
@@ -78,11 +77,11 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
         .times(4)
         .reply(200, 'text');
 
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: true,
         project: {
           apiBaseUrl,
@@ -111,11 +110,11 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
         .times(4)
         .reply(200, []);
 
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl,
@@ -144,11 +143,11 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
         .times(4)
         .reply(200, []);
 
-      expect(
-        await getChangeLogJSON({
+      await expect(
+        getChangeLogJSON({
           ...upgrade,
         }),
-      ).toMatchObject({
+      ).resolves.toMatchObject({
         hasReleaseNotes: false,
         project: {
           apiBaseUrl,
@@ -185,7 +184,7 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
       const res = await getReleaseNotesMdFile(bitbucketProject);
       expect(res).toStrictEqual({
         changelogFile: 'src/CHANGELOG.md',
-        changelogMd: changelogMd + '\n#\n##',
+        changelogMd: `${changelogMd}\n#\n##`,
       });
     });
 
@@ -217,8 +216,9 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
       const res = await getReleaseNotesMdFile(project);
       expect(res).toStrictEqual({
         changelogFile: 'packages/components/src/CHANGELOG.md',
-        changelogMd: changelogMd + '\n#\n##',
+        changelogMd: `${changelogMd}\n#\n##`,
       });
+
       expect(logger.logger.debug).toHaveBeenCalledWith(
         `Multiple candidates for changelog file, using packages/components/src/CHANGELOG.md`,
       );
@@ -232,7 +232,7 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
           isLastPage: true,
           values: ['.gitignore', 'README.md'],
         });
-      expect(await getReleaseNotesMdFile(bitbucketProject)).toBeNull();
+      await expect(getReleaseNotesMdFile(bitbucketProject)).resolves.toBeNull();
     });
   });
 
@@ -245,6 +245,25 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
   });
 
   describe('source', () => {
+    describe('getBaseUrl', () => {
+      it.each`
+        sourceUrl                                                                     | expected
+        ${'https://bitbucket.some-host.org/projects/some-org/repos/some-repo'}        | ${'https://bitbucket.some-host.org/'}
+        ${'https://some-host.org/bitbucket/projects/some-org/repos/some-repo/browse'} | ${'https://some-host.org/bitbucket/'}
+        ${'https://some-host.org:7990/extra/path/projects/some-org/repos/some-repo/'} | ${'https://some-host.org:7990/extra/path/'}
+        ${'git+https://some-host.org:7990/scm/some-org/some-repo.git'}                | ${'https://some-host.org:7990/'}
+        ${'https://tools.domain.com/bitbucket/projects/mygroup/repos/my-library'}     | ${'https://tools.domain.com/bitbucket/'}
+        ${'some-random-value'}                                                        | ${''}
+      `('$sourceUrl', ({ sourceUrl, expected }) => {
+        expect(
+          changelogSource.getBaseUrl({
+            ...upgrade,
+            sourceUrl,
+          }),
+        ).toBe(expected);
+      });
+    });
+
     it('getAPIBaseUrl', () => {
       expect(changelogSource.getAPIBaseUrl(upgrade)).toBe(apiBaseUrl);
     });
@@ -267,6 +286,7 @@ describe('workers/repository/update/pr/changelog/bitbucket-server/index', () => 
         ${'ssh://git@some-host.org:7999/some-org/some-repo.git'}                                   | ${'some-org/some-repo'}
         ${'https://some-host.org:7990/scm/some-org/some-repo.git'}                                 | ${'some-org/some-repo'}
         ${'https://some-host:7990/projects/some-org/repos/some-repo/raw/src/CHANGELOG.md?at=HEAD'} | ${'some-org/some-repo'}
+        ${'https://tools.domain.com/bitbucket/projects/mygroup/repos/my-library'}                  | ${'mygroup/my-library'}
         ${'some-random-value'}                                                                     | ${''}
       `('$input', ({ input, expected }) => {
         expect(

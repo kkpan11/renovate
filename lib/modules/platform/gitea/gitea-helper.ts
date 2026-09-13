@@ -1,8 +1,9 @@
-import { logger } from '../../../logger';
-import type { BranchStatus } from '../../../types';
-import type { GiteaHttpOptions } from '../../../util/http/gitea';
-import { GiteaHttp } from '../../../util/http/gitea';
-import { getQueryString } from '../../../util/url';
+import { logger } from '../../../logger/index.ts';
+import type { BranchStatus } from '../../../types/index.ts';
+import type { GiteaHttpOptions } from '../../../util/http/gitea.ts';
+import { GiteaHttp } from '../../../util/http/gitea.ts';
+import { fromBase64 } from '../../../util/string.ts';
+import { getQueryString } from '../../../util/url.ts';
 import type {
   Branch,
   CombinedCommitStatus,
@@ -28,12 +29,14 @@ import type {
   RepoSearchParams,
   RepoSearchResults,
   User,
-} from './types';
-import { API_PATH } from './utils';
+} from './types.ts';
+import { API_PATH } from './utils.ts';
 
 export const giteaHttp = new GiteaHttp();
 
-const urlEscape = (raw: string): string => encodeURIComponent(raw);
+function urlEscape(raw: string): string {
+  return encodeURIComponent(raw);
+}
 const commitStatusStates: CommitStatusType[] = [
   'unknown',
   'success',
@@ -115,7 +118,7 @@ export async function getRepoContents(
   const res = await giteaHttp.getJsonUnchecked<RepoContents>(url, options);
 
   if (res.body.content) {
-    res.body.contentString = Buffer.from(res.body.content, 'base64').toString();
+    res.body.contentString = fromBase64(res.body.content);
   }
 
   return res.body;

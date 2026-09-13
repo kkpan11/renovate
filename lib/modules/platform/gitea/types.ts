@@ -1,5 +1,6 @@
-import type { LongCommitSha } from '../../../util/git/types';
-import type { Pr, RepoSortMethod, SortMethod } from '../types';
+import type { LongCommitSha } from '../../../util/schema-utils/git.ts';
+import type { EmailAddress } from '../../../util/schema-utils/index.ts';
+import type { Pr, RepoSortMethod, SortMethod } from '../types.ts';
 
 export interface PrReviewersParams {
   reviewers?: string[];
@@ -9,18 +10,9 @@ export interface PrReviewersParams {
 export type PRState = 'open' | 'closed' | 'all';
 export type IssueState = 'open' | 'closed' | 'all';
 export type CommitStatusType =
-  | 'pending'
-  | 'success'
-  | 'error'
-  | 'failure'
-  | 'warning'
-  | 'unknown';
+  'pending' | 'success' | 'error' | 'failure' | 'warning' | 'unknown';
 export type PRMergeMethod =
-  | 'fast-forward'
-  | 'merge'
-  | 'rebase'
-  | 'rebase-merge'
-  | 'squash';
+  'fast-forward-only' | 'merge' | 'rebase' | 'rebase-merge' | 'squash';
 
 export interface GiteaLabel {
   id: number;
@@ -49,7 +41,7 @@ export interface PR {
     login?: string;
   };
   assignees?: any[];
-  user?: { username?: string };
+  user?: { login?: string };
 
   // labels returned from the Gitea API are represented as an array of objects
   // ref: https://docs.gitea.com/api/1.20/#tag/repository/operation/repoGetPullRequest
@@ -67,9 +59,9 @@ export interface Issue {
 
 export interface User {
   id: number;
-  email: string;
+  email: EmailAddress;
   full_name?: string;
-  username: string;
+  login: string;
 }
 
 export interface Repo {
@@ -81,7 +73,7 @@ export interface Repo {
   allow_squash_merge: boolean;
   archived: boolean;
   clone_url?: string;
-  default_merge_style: string;
+  default_merge_style: PRMergeMethod;
   external_tracker?: unknown;
   has_issues: boolean;
   has_pull_requests: boolean;
@@ -136,8 +128,8 @@ export interface Commit {
 
 export interface CommitUser {
   name: string;
-  email: string;
-  username: string;
+  email: EmailAddress;
+  login: string;
 }
 
 export interface CommitStatus {

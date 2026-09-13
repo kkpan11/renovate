@@ -1,14 +1,15 @@
-import is from '@sindresorhus/is';
-import { logger } from '../../../logger';
-import { ExternalHostError } from '../../../types/errors/external-host-error';
-import { cache } from '../../../util/cache/package/decorator';
-import { HttpError } from '../../../util/http';
-import { asTimestamp } from '../../../util/timestamp';
-import { id as semverId } from '../../versioning/semver';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
-import { datasource, defaultRegistryUrl } from './common';
-import type { PackageType } from './types';
+import { isNonEmptyString } from '@sindresorhus/is';
+import { logger } from '../../../logger/index.ts';
+import { ExternalHostError } from '../../../types/errors/external-host-error.ts';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { HttpError } from '../../../util/http/index.ts';
+import { regEx } from '../../../util/regex.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import { id as semverId } from '../../versioning/semver/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, ReleaseResult } from '../types.ts';
+import { datasource, defaultRegistryUrl } from './common.ts';
+import type { PackageType } from './types.ts';
 
 export class HexpmBobDatasource extends Datasource {
   static readonly id = datasource;
@@ -32,12 +33,7 @@ export class HexpmBobDatasource extends Datasource {
   override readonly sourceUrlNote =
     'We use the URL https://github.com/elixir-lang/elixir.git for the `elixir` package and the https://github.com/erlang/otp.git URL for the `erlang` package.';
 
-  @cache({
-    namespace: `datasource-${datasource}`,
-    key: ({ registryUrl, packageName }: GetReleasesConfig) =>
-      `${registryUrl}:${packageName}`,
-  })
-  async getReleases({
+  private async _getReleases({
     registryUrl,
     packageName,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
@@ -63,7 +59,7 @@ export class HexpmBobDatasource extends Datasource {
       result.releases = body
         .split('\n')
         .map((line) => line.trim())
-        .filter(is.nonEmptyString)
+        .filter(isNonEmptyString)
         .map((line) => {
           const [version, gitRef, buildDate] = line.split(' ');
 
@@ -84,11 +80,22 @@ export class HexpmBobDatasource extends Datasource {
     return result.releases.length > 0 ? result : null;
   }
 
+  getReleases(config: GetReleasesConfig): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: `datasource-${datasource}`,
+        key: `${config.registryUrl}:${config.packageName}`,
+        fallback: true,
+      },
+      () => this._getReleases(config),
+    );
+  }
+
   private static getPackageType(packageName: string): PackageType | null {
     if (packageName === 'elixir') {
       return 'elixir';
     }
-    if (/^otp\/\w+-\d+\.\d+$/.test(packageName)) {
+    if (regEx(/^otp\/\w+-\d+\.\d+$/).test(packageName)) {
       return 'erlang';
     }
     return null;
@@ -100,16 +107,16 @@ export class HexpmBobDatasource extends Datasource {
   ): string {
     switch (packageType) {
       case 'elixir':
-        return version.replace(/^v/, '');
+        return version.replace(regEx(/^v/), '');
       case 'erlang':
-        return version.replace(/^OTP-/, '');
+        return version.replace(regEx(/^OTP-/), '');
     }
   }
 
   private static isStable(version: string, packageType: PackageType): boolean {
     switch (packageType) {
       case 'elixir':
-        return /^v\d+\.\d+\.\d+($|-otp)/.test(version);
+        return regEx(/^v\d+\.\d+\.\d+(?:$|-otp)/).test(version);
       case 'erlang':
         return version.startsWith('OTP-');
     }

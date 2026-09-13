@@ -1,11 +1,11 @@
-import { cache } from '../../../util/cache/package/decorator';
-import { asTimestamp } from '../../../util/timestamp';
-import { joinUrlParts } from '../../../util/url';
-import { id as versioning } from '../../versioning/node';
-import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
-import { datasource, defaultRegistryUrl } from './common';
-import type { NodeRelease } from './types';
+import { withCache } from '../../../util/cache/package/with-cache.ts';
+import { asTimestamp } from '../../../util/timestamp.ts';
+import { joinUrlParts } from '../../../util/url.ts';
+import { id as versioning } from '../../versioning/node/index.ts';
+import { Datasource } from '../datasource.ts';
+import type { GetReleasesConfig, ReleaseResult } from '../types.ts';
+import { datasource, defaultRegistryUrl } from './common.ts';
+import { NodeReleases } from './schema.ts';
 
 export class NodeVersionDatasource extends Datasource {
   static readonly id = datasource;
@@ -27,15 +27,10 @@ export class NodeVersionDatasource extends Datasource {
   override readonly sourceUrlNote =
     'We use the URL: https://github.com/nodejs/node';
 
-  @cache({
-    namespace: `datasource-${datasource}`,
-    // TODO: types (#22198)
-    key: ({ registryUrl }: GetReleasesConfig) => `${registryUrl}`,
-  })
-  async getReleases({
+  private async _getReleases({
     registryUrl,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
-    /* v8 ignore next 3 -- should never happen */
+    /* v8 ignore next -- should never happen */
     if (!registryUrl) {
       return null;
     }
@@ -46,13 +41,12 @@ export class NodeVersionDatasource extends Datasource {
       releases: [],
     };
     try {
-      const resp = (
-        await this.http.getJsonUnchecked<NodeRelease[]>(
-          joinUrlParts(registryUrl, 'index.json'),
-        )
-      ).body;
+      const resp = await this.http.getJson(
+        joinUrlParts(registryUrl, 'index.json'),
+        NodeReleases,
+      );
       result.releases.push(
-        ...resp.map(({ version, date, lts }) => ({
+        ...resp.body.map(({ version, date, lts }) => ({
           version,
           releaseTimestamp: asTimestamp(date),
           isStable: lts !== false,
@@ -63,5 +57,17 @@ export class NodeVersionDatasource extends Datasource {
     }
 
     return result.releases.length ? result : null;
+  }
+
+  getReleases(config: GetReleasesConfig): Promise<ReleaseResult | null> {
+    return withCache(
+      {
+        namespace: `datasource-${datasource}`,
+        // TODO: types (#22198)
+        key: `${config.registryUrl}`,
+        fallback: true,
+      },
+      () => this._getReleases(config),
+    );
   }
 }

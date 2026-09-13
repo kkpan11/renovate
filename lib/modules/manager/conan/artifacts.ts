@@ -1,30 +1,40 @@
 import { quote } from 'shlex';
-import { TEMPORARY_ERROR } from '../../../constants/error-messages';
-import { logger } from '../../../logger';
-import { exec } from '../../../util/exec';
-import type { ExecOptions } from '../../../util/exec/types';
+import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
+import { logger } from '../../../logger/index.ts';
+import type { ExecOptions } from '../../../util/exec/types.ts';
 import {
   findLocalSiblingOrParent,
   readLocalFile,
   writeLocalFile,
-} from '../../../util/fs';
-import { getGitEnvironmentVariables } from '../../../util/git/auth';
-import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
+} from '../../../util/fs/index.ts';
+import { withGitEnvironment } from '../../../util/git/exec.ts';
+import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
+
+const gitExec = withGitEnvironment(['conan']);
 
 async function conanLockUpdate(
   conanFilePath: string,
   isLockFileMaintenance: boolean | undefined,
+  conanConstraint?: string,
+  pythonConstraint?: string,
 ): Promise<void> {
-  const command =
-    `conan lock create ${quote(conanFilePath)}` +
-    (isLockFileMaintenance ? ' --lockfile=""' : '');
+  const command = `conan lock create ${quote(conanFilePath)}${isLockFileMaintenance ? ' --lockfile=""' : ''}`;
 
   const execOptions: ExecOptions = {
-    extraEnv: { ...getGitEnvironmentVariables(['conan']) },
+    toolConstraints: [
+      {
+        toolName: 'python',
+        constraint: pythonConstraint,
+      },
+      {
+        toolName: 'conan',
+        constraint: conanConstraint,
+      },
+    ],
     docker: {},
   };
 
-  await exec(command, execOptions);
+  await gitExec(command, execOptions);
 }
 
 export async function updateArtifacts(
@@ -61,7 +71,12 @@ export async function updateArtifacts(
     await writeLocalFile(packageFileName, newPackageFileContent);
 
     logger.trace(`Updating ${lockFileName}`);
-    await conanLockUpdate(packageFileName, isLockFileMaintenance);
+    await conanLockUpdate(
+      packageFileName,
+      isLockFileMaintenance,
+      config.constraints?.conan,
+      config.constraints?.python,
+    );
 
     const newLockFileContent = await readLocalFile(lockFileName);
     if (!newLockFileContent) {
@@ -97,7 +112,7 @@ export async function updateArtifacts(
     return [
       {
         artifactError: {
-          lockFile: lockFileName,
+          fileName: lockFileName,
           stderr: err.message,
         },
       },

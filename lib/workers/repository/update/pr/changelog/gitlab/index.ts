@@ -1,15 +1,15 @@
 import changelogFilenameRegex from 'changelog-filename-regex';
-import { logger } from '../../../../../../logger';
-import type { GitlabRelease } from '../../../../../../modules/datasource/gitlab-releases/types';
-import type { GitlabTreeNode } from '../../../../../../types/platform/gitlab';
-import { GitlabHttp } from '../../../../../../util/http/gitlab';
-import { compareChangelogFilePath } from '../common';
+import { logger } from '../../../../../../logger/index.ts';
+import type { GitlabRelease } from '../../../../../../modules/datasource/gitlab-releases/types.ts';
+import type { GitlabTreeNode } from '../../../../../../types/platform/gitlab/index.ts';
+import { GitlabHttp } from '../../../../../../util/http/gitlab.ts';
+import { compareChangelogFilePath } from '../common.ts';
 import type {
   ChangeLogFile,
   ChangeLogNotes,
   ChangeLogProject,
   ChangeLogRelease,
-} from '../types';
+} from '../types.ts';
 
 export const id = 'gitlab-changelog';
 const http = new GitlabHttp(id);
@@ -55,7 +55,7 @@ export async function getReleaseNotesMd(
 
   // https://docs.gitlab.com/13.2/ee/api/repositories.html#raw-blob-content
   const fileRes = await http.getText(`${apiPrefix}blobs/${id}/raw`);
-  const changelogMd = fileRes.body + '\n#\n##';
+  const changelogMd = `${fileRes.body}\n#\n##`;
   return { changelogFile, changelogMd };
 }
 

@@ -1,11 +1,11 @@
 import parseGithubUrl from 'github-url-from-git';
-import { z } from 'zod';
-import { logger } from '../../../../logger';
-import { regEx } from '../../../../util/regex';
-import { isHttpUrl } from '../../../../util/url';
-import { GithubReleasesDatasource } from '../../../datasource/github-releases';
-import { GithubTagsDatasource } from '../../../datasource/github-tags';
-import type { PackageDependency } from '../../types';
+import { z } from 'zod/v4';
+import { logger } from '../../../../logger/index.ts';
+import { regEx } from '../../../../util/regex.ts';
+import { isHttpUrl } from '../../../../util/url.ts';
+import { GithubReleasesDatasource } from '../../../datasource/github-releases/index.ts';
+import { GithubTagsDatasource } from '../../../datasource/github-tags/index.ts';
+import type { PackageDependency } from '../../types.ts';
 
 const githubUrlRegex = regEx(
   /^https:\/\/github\.com\/(?<packageName>[^/]+\/[^/]+)/,
@@ -19,7 +19,12 @@ function githubPackageName(input: string): string | undefined {
   return parseGithubUrl(input)?.match(githubUrlRegex)?.groups?.packageName;
 }
 
-export const gitRules = ['git_repository', '_git_repository'] as const;
+export const gitRules = [
+  'git_repository',
+  '_git_repository',
+  'new_git_repository',
+  '_new_git_repository',
+] as const;
 
 export const GitTarget = z
   .object({

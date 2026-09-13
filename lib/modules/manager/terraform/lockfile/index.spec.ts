@@ -1,18 +1,18 @@
 import { codeBlock } from 'common-tags';
-import { join } from 'upath';
+import upath from 'upath';
 import { mockDeep } from 'vitest-mock-extended';
-import { GlobalConfig } from '../../../../config/global';
-import { getPkgReleases } from '../../../datasource';
-import type { UpdateArtifactsConfig } from '../../types';
-import { updateArtifacts } from '../index';
-import { TerraformProviderHash } from './hash';
-import { getNewConstraint } from './index';
-import { fs } from '~test/util';
+import { fs } from '~test/util.ts';
+import { GlobalConfig } from '../../../../config/global.ts';
+import { getPkgReleases } from '../../../datasource/index.ts';
+import type { UpdateArtifactsConfig } from '../../types.ts';
+import { updateArtifacts } from '../index.ts';
+import { TerraformProviderHash } from './hash.ts';
+import { getNewConstraint } from './index.ts';
 
 // auto-mock fs
-vi.mock('../../../../util/fs');
-vi.mock('./hash');
-vi.mock('../../../datasource', () => mockDeep());
+vi.mock('../../../../util/fs/index.ts');
+vi.mock('./hash.ts');
+vi.mock('../../../datasource/index.ts', () => mockDeep());
 
 const config = {
   constraints: {},
@@ -20,12 +20,12 @@ const config = {
 
 const adminConfig = {
   // `join` fixes Windows CI
-  localDir: join('/tmp/github/some/repo'),
-  cacheDir: join('/tmp/renovate/cache'),
-  containerbaseDir: join('/tmp/renovate/cache/containerbase'),
+  localDir: upath.join('/tmp/github/some/repo'),
+  cacheDir: upath.join('/tmp/renovate/cache'),
+  containerbaseDir: upath.join('/tmp/renovate/cache/containerbase'),
 };
 
-const mockHash = vi.mocked(TerraformProviderHash).createHashes;
+const mockHash = vi.mocked(TerraformProviderHash.createHashes);
 const mockGetPkgReleases = vi.mocked(getPkgReleases);
 
 describe('modules/manager/terraform/lockfile/index', () => {
@@ -33,43 +33,63 @@ describe('modules/manager/terraform/lockfile/index', () => {
     GlobalConfig.set(adminConfig);
   });
 
-  it('returns null if no .terraform.lock.hcl found', async () => {
-    expect(
-      await updateArtifacts({
+  it('returns artifact error', async () => {
+    fs.findLocalSiblingOrParent.mockResolvedValueOnce('.terraform.lock.hcl');
+    fs.readLocalFile.mockRejectedValueOnce(new Error('File not found'));
+    await expect(
+      updateArtifacts({
         packageFileName: 'main.tf',
         updatedDeps: [{ depName: 'aws' }],
         newPackageFileContent: '',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toEqual([
+      {
+        artifactError: {
+          fileName: '.terraform.lock.hcl',
+          stderr: 'File not found',
+        },
+      },
+    ]);
+  });
+
+  it('returns null if no .terraform.lock.hcl found', async () => {
+    await expect(
+      updateArtifacts({
+        packageFileName: 'main.tf',
+        updatedDeps: [{ depName: 'aws' }],
+        newPackageFileContent: '',
+        config,
+      }),
+    ).resolves.toBeNull();
   });
 
   it('returns null if .terraform.lock.hcl is empty', async () => {
     fs.readLocalFile.mockResolvedValueOnce('');
     fs.findLocalSiblingOrParent.mockResolvedValueOnce('.terraform.lock.hcl');
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'main.tf',
         updatedDeps: [{ depName: 'aws' }],
         newPackageFileContent: '',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('returns null if .terraform.lock.hcl is invalid', async () => {
     fs.readLocalFile.mockResolvedValueOnce('empty');
     fs.findLocalSiblingOrParent.mockResolvedValueOnce('.terraform.lock.hcl');
 
-    expect(
-      await updateArtifacts({
+    await expect(
+      updateArtifacts({
         packageFileName: 'main.tf',
         updatedDeps: [{ depName: 'aws' }],
         newPackageFileContent: '',
         config,
       }),
-    ).toBeNull();
+    ).resolves.toBeNull();
   });
 
   it('update single dependency with exact constraint and depType provider', async () => {
@@ -616,7 +636,7 @@ describe('modules/manager/terraform/lockfile/index', () => {
         ]
       }
 
-      provider "registry.terraform.io/hashicorp/random" {
+      provider "registry.opentofu.org/hashicorp/random" {
         version     = "2.2.1"
         constraints = "~> 2.2"
         hashes = [
@@ -689,7 +709,7 @@ describe('modules/manager/terraform/lockfile/index', () => {
               ]
             }
 
-            provider "registry.terraform.io/hashicorp/random" {
+            provider "registry.opentofu.org/hashicorp/random" {
               version     = "2.2.2"
               constraints = "~> 2.2"
               hashes = [
@@ -706,7 +726,31 @@ describe('modules/manager/terraform/lockfile/index', () => {
 
     expect(mockHash.mock.calls).toEqual([
       ['https://registry.terraform.io', 'hashicorp/azurerm', '2.56.0'],
-      ['https://registry.terraform.io', 'hashicorp/random', '2.2.2'],
+      ['https://registry.opentofu.org', 'hashicorp/random', '2.2.2'],
+    ]);
+
+    expect(mockGetPkgReleases.mock.calls).toEqual([
+      [
+        {
+          datasource: 'terraform-provider',
+          packageName: 'hashicorp/aws',
+          registryUrls: ['https://registry.terraform.io'],
+        },
+      ],
+      [
+        {
+          datasource: 'terraform-provider',
+          packageName: 'hashicorp/azurerm',
+          registryUrls: ['https://registry.terraform.io'],
+        },
+      ],
+      [
+        {
+          datasource: 'terraform-provider',
+          packageName: 'hashicorp/random',
+          registryUrls: ['https://registry.opentofu.org'],
+        },
+      ],
     ]);
   });
 
@@ -1219,7 +1263,8 @@ describe('modules/manager/terraform/lockfile/index', () => {
           },
           '>= 2.41.0, <= 2.41.0, >= 2.0.0',
         ),
-      ).toBe('>= 2.41.0, <= 2.46.0, >= 2.0.0');
+        // normalized: boundary version ascending
+      ).toBe('>= 2.0.0, >= 2.41.0, <= 2.46.0');
     });
 
     it('create constraint with full version', () => {
@@ -1233,6 +1278,48 @@ describe('modules/manager/terraform/lockfile/index', () => {
           '>= 4.0.0, < 4.12.0',
         ),
       ).toBe('< 4.21.0');
+    });
+
+    it('normalizes constraint order when a bumped exact pin overtakes a range', () => {
+      // A root module pins an exact version while a child module keeps a `~>`
+      // range; after the bump the exact pin must sort after the range.
+      // https://github.com/renovatebot/renovate/issues/37273
+      expect(
+        getNewConstraint(
+          {
+            currentValue: '5.0.0',
+            newValue: '5.9.0',
+            newVersion: '5.9.0',
+          },
+          '5.0.0, ~> 5.0',
+        ),
+      ).toBe('~> 5.0, 5.9.0');
+    });
+
+    it('normalizes constraint order for three-part pessimistic ranges', () => {
+      expect(
+        getNewConstraint(
+          {
+            currentValue: '0.0.176',
+            newValue: '0.0.186',
+            newVersion: '0.0.186',
+          },
+          '0.0.176, ~> 0.0.176',
+        ),
+      ).toBe('~> 0.0.176, 0.0.186');
+    });
+
+    it('normalizes constraint order when a range is widened past a lower bound', () => {
+      expect(
+        getNewConstraint(
+          {
+            currentValue: '~> 5.0',
+            newValue: '~> 6.0',
+            newVersion: '6.6.0',
+          },
+          '~> 5.0, >= 5.81.0',
+        ),
+      ).toBe('>= 5.81.0, ~> 6.0');
     });
   });
 });
